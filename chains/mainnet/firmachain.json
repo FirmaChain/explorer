@@ -1,0 +1,31 @@
+{
+  "chain_name": "firmachain",
+  "registry_name": "FIRMACHAIN Mainnet",
+  "network_type": "mainnet",
+  "api": [
+    { "address": "https://explorer-mainnet-demo.firmachain.dev/api", "provider": "FIRMACHAIN" }
+  ],
+  "rpc": [
+    { "address": "https://explorer-mainnet-demo.firmachain.dev/rpc", "provider": "FIRMACHAIN" }
+  ],
+  "sdk_version": "0.50.15",
+  "coin_type": "7777777",
+  "min_tx_fee": "20000",
+  "addr_prefix": "firma",
+  "logo": "https://raw.githubusercontent.com/cosmos/chain-registry/master/firmachain/images/fct.svg",
+  "assets": [
+    {
+      "base": "ufct",
+      "symbol": "FCT",
+      "exponent": "6",
+      "coingecko_id": "firmachain",
+      "logo": "https://raw.githubusercontent.com/cosmos/chain-registry/master/firmachain/images/fct.svg"
+    }
+  ],
+  "features": [
+    "dashboard", "governance", "staking", "blocks", "tx", "uptime",
+    "ibc", "supply", "parameters", "consensus", "account"
+  ],
+  "keplr_features": ["ibc-go", "ibc-transfer", "no-legacy-stdTx"],
+  "keplr_price_step": { "low": 0.1, "average": 0.15, "high": 0.2 }
+}

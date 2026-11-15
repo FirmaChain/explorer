@@ -4,6 +4,8 @@ declare module '@personaxyz/ad-sdk';
 // Vite injects env vars as strings whatever the .env file looks like. Declaring
 // them as number/boolean hides bugs such as `"false"` being truthy.
 interface ImportMetaEnv {
+    readonly VITE_NETWORK?: 'mainnet' | 'testnet' | '',
+    readonly VITE_CHAIN?: string,
     readonly VITE_REFRESH_INTERVAL?: string,
     readonly VITE_FETCH_ALL_BLOCKS?: string,
     readonly VITE_RECENT_BLOCK_LIMIT?: string,

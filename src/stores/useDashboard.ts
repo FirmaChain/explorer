@@ -181,6 +181,8 @@ export const useDashboard = defineStore('dashboard', {
           });
       });
 
+      if (coinIds.length === 0) return;
+
       const currencies = ['usd, cny']; // usd,cny,eur,jpy,krw,sgd,hkd
       get(
         `${coingeckoUrl}/api/v3/simple/price?include_24hr_change=true&vs_currencies=${currencies.join(
@@ -202,19 +204,24 @@ export const useDashboard = defineStore('dashboard', {
       }
     },
     async loadingFromLocal() {
-      if (window.location.hostname.search('testnet') > -1) {
-        this.networkType = NetworkType.Testnet;
-      }
+      const network = import.meta.env.VITE_NETWORK;
+      this.networkType =
+        network === 'testnet' || (!network && window.location.hostname.includes('testnet'))
+          ? NetworkType.Testnet
+          : NetworkType.Mainnet;
       const source: Record<string, LocalChainConfig> =
         this.networkType === NetworkType.Mainnet
           ? import.meta.glob('../../chains/mainnet/*.json', { eager: true })
           : import.meta.glob('../../chains/testnet/*.json', { eager: true });
-      Object.values<LocalChainConfig>(source).forEach((x: LocalChainConfig) => {
-        this.chains[x.chain_name] = convertFromLocal(x);
-        if (!this.chains[x.chain_name].networkType) {
-          this.chains[x.chain_name].networkType = this.networkType.toString().toLowerCase();
-        }
-      });
+      const chainName = import.meta.env.VITE_CHAIN;
+      Object.values<LocalChainConfig>(source)
+        .filter((x) => !chainName || x.chain_name === chainName)
+        .forEach((x: LocalChainConfig) => {
+          this.chains[x.chain_name] = convertFromLocal(x);
+          if (!this.chains[x.chain_name].networkType) {
+            this.chains[x.chain_name].networkType = this.networkType.toString().toLowerCase();
+          }
+        });
       this.setupDefault();
       this.status = LoadingStatus.Loaded;
     },

@@ -92,8 +92,8 @@ const show_ad = computed(() => {
     >
       <div class="flex justify-between mt-1 pl-4 py-4 mb-1">
         <RouterLink to="/" class="flex items-center">
-          <img class="w-10 h-10" src="../../assets/logo.svg" />
-          <h1 class="flex-1 ml-3 text-2xl font-semibold dark:text-white">Ping.pub</h1>
+          <img class="w-10 h-10" src="/firmachain.svg" alt="FIRMACHAIN" />
+          <h1 class="flex-1 ml-3 text-2xl font-semibold dark:text-white">FIRMACHAIN</h1>
         </RouterLink>
         <div
           class="pr-4 cursor-pointer xl:!hidden"
@@ -247,7 +247,7 @@ const show_ad = computed(() => {
         <Sponsors v-if="showDiscord" />
         <div class="px-4 text-sm pt-2 text-base-content/60 pb-2 uppercase">{{ $t('module.links') }}</div>
         <a
-          href="https://twitter.com/ping_pub"
+          href="https://x.com/firmachain"
           target="_blank"
           class="py-2 px-4 flex items-center cursor-pointer rounded-lg hover:bg-active"
         >

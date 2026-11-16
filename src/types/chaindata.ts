@@ -49,6 +49,7 @@ export interface LocalChainConfig {
   rpc: string[] | Endpoint[];
   sdk_version: string;
   registry_name?: string;
+  display_name?: string;
   features?: string[];
   keplr_price_step?: {
     low: number;
@@ -104,6 +105,7 @@ export interface DirectoryChainConfig {
 export interface ChainConfig {
   chainName: string;
   prettyName: string;
+  displayName?: string;
   networkType?: string;
   bech32Prefix: string;
   bech32ConsensusPrefix: string;

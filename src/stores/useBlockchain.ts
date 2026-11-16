@@ -70,7 +70,7 @@ export const useBlockchain = defineStore('blockchain', {
         }
         currNavItem = [
           {
-            title: this.current?.prettyName || this.chainName || '',
+            title: this.current?.displayName || this.current?.prettyName || this.chainName || '',
             icon: { image: this.current.logo, size: '22' },
             i18n: false,
             badgeContent: this.isConsumerChain ? 'Consumer' : undefined,
@@ -95,7 +95,7 @@ export const useBlockchain = defineStore('blockchain', {
         const ch = this.dashboard.chains[name];
         if (ch && this.dashboard.favoriteMap?.[name]) {
           favNavItems.push({
-            title: ch.prettyName || ch.chainName || name,
+            title: ch.displayName || ch.prettyName || ch.chainName || name,
             to: { path: `/${ch.chainName || name}` },
             icon: { image: ch.logo, size: '22' },
           });

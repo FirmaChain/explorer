@@ -29,7 +29,7 @@ const addFavor = (e: Event) => {
       <img :src="conf.logo" />
     </div>
     <div class="font-semibold ml-4 text-base flex-1 truncate capitalize">
-      {{ conf?.prettyName || props.name }}
+      {{ conf?.displayName || conf?.prettyName || props.name }}
     </div>
     <div
       @click="addFavor"

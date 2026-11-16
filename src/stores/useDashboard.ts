@@ -48,6 +48,7 @@ export function convertFromLocal(lc: LocalChainConfig): ChainConfig {
   conf.networkType = lc.network_type;
   conf.coinType = lc.coin_type;
   conf.prettyName = lc.registry_name || lc.chain_name;
+  conf.displayName = lc.display_name;
   conf.endpoints = {
     rest: apiConverter(lc.api),
     rpc: apiConverter(lc.rpc),

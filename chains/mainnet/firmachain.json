@@ -1,6 +1,7 @@
 {
   "chain_name": "firmachain",
   "registry_name": "FIRMACHAIN Mainnet",
+  "display_name": "FIRMACHAIN",
   "network_type": "mainnet",
   "api": [
     { "address": "https://explorer-mainnet-demo.firmachain.dev/api", "provider": "FIRMACHAIN" }

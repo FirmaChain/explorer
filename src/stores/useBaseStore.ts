@@ -37,6 +37,7 @@ export const useBaseStore = defineStore('baseStore', {
       lastPollError: '',
       theme: initialTheme(),
       connected: false,
+      connectionChecked: false,
     };
   },
   getters: {
@@ -120,6 +121,7 @@ export const useBaseStore = defineStore('baseStore', {
       this.missingHeights = [];
       this.lastPollError = '';
       this.connected = false;
+      this.connectionChecked = false;
     },
     async clearRecentBlocks() {
       this.pollGeneration += 1;
@@ -155,6 +157,7 @@ export const useBaseStore = defineStore('baseStore', {
         }
         this.latest = latestRes;
         this.connected = true;
+        this.connectionChecked = true;
         this.lastPollError = '';
       } catch (error) {
         if (gen !== this.pollGeneration || this.currentContextKey() !== nextCtx) {
@@ -162,6 +165,7 @@ export const useBaseStore = defineStore('baseStore', {
         }
         console.error('Error fetching latest block:', error);
         this.connected = false;
+        this.connectionChecked = true;
         this.lastPollError =
           error instanceof Error ? error.message : String(error);
         return this.latest;
@@ -249,10 +253,12 @@ export const useBaseStore = defineStore('baseStore', {
       try {
         const block = await this.blockchain.rpc.getBaseBlockAt(String(height));
         this.connected = true;
+        this.connectionChecked = true;
         return block;
       } catch (error) {
         console.error('Error fetching latest block:', error);
         this.connected = false;
+        this.connectionChecked = true;
       }
       return {} as Block;
     },

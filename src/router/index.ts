@@ -1,6 +1,6 @@
 import { useBlockchain, useDashboard } from '@/stores';
 import { LoadingStatus } from '@/stores/useDashboard';
-import { buildLegacyRedirect, matchLegacyPath } from '@/libs/legacyRoutes';
+import { buildLegacyRedirect, matchLegacyPath, resolveLegacyTargetChain } from '@/libs/legacyRoutes';
 import { createRouter, createWebHistory } from 'vue-router';
 // @ts-ignore
 import { setupLayouts } from 'virtual:generated-layouts';
@@ -13,6 +13,25 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
+  if (to.path === '/') {
+    const dashboard = useDashboard();
+    if (dashboard.status !== LoadingStatus.Loaded) {
+      await dashboard.initial();
+    }
+    const targetChain = resolveLegacyTargetChain(
+      dashboard.chains,
+      import.meta.env.VITE_CHAIN
+    );
+    if (targetChain) {
+      return {
+        path: `/${targetChain}`,
+        query: to.query,
+        hash: to.hash,
+        replace: true,
+      };
+    }
+  }
+
   if (matchLegacyPath(to.path)) {
     const dashboard = useDashboard();
     if (dashboard.status !== LoadingStatus.Loaded) {

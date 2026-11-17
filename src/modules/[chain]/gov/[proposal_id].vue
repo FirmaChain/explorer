@@ -155,6 +155,11 @@ const color = computed(() => {
   }
   return '';
 });
+const statusBadgeClass = computed(() => {
+  if (color.value === 'success') return 'bg-yes/20 text-yes';
+  if (color.value === 'error') return 'bg-no/20 text-no';
+  return 'bg-info/20 text-info';
+});
 const status = computed(() => {
   if (proposal.value.status) {
     return proposal.value.status.replace('PROPOSAL_STATUS_', '');
@@ -207,48 +212,67 @@ const turnout = computed(() => {
   if (turnoutSnapshot.value?.available) {
     return turnoutSnapshot.value.percent;
   }
-  return 'Unavailable';
+  return '-';
 });
 
-const yes = computed(() => {
-  if (total.value > 0) {
-    const yes = proposal.value?.final_tally_result?.yes || 0;
-    return format.percent(Number(yes) / total.value);
+const turnoutBarWidth = computed(() => {
+  if (!turnoutSnapshot.value?.available) {
+    return '0%';
   }
-  return 0;
+  const pct = turnoutSnapshot.value.percent;
+  return !pct || pct === '-' || pct === 'NaN%' ? '0%' : pct;
 });
 
-const no = computed(() => {
-  if (total.value > 0) {
-    const value = proposal.value?.final_tally_result?.no || 0;
-    return format.percent(Number(value) / total.value);
-  }
-  return 0;
-});
-
-const veto = computed(() => {
-  if (total.value > 0) {
-    const value = proposal.value?.final_tally_result?.no_with_veto || 0;
-    return format.percent(Number(value) / total.value);
-  }
-  return 0;
-});
-
-const abstain = computed(() => {
-  if (total.value > 0) {
-    const value = proposal.value?.final_tally_result?.abstain || 0;
-    return format.percent(Number(value) / total.value);
-  }
-  return 0;
-});
-const processList = computed(() => {
-  return [
-    { name: 'Turnout', value: turnout.value, class: 'bg-info' },
-    { name: 'Yes', value: yes.value, class: 'bg-success' },
-    { name: 'No', value: no.value, class: 'bg-error' },
-    { name: 'No With Veto', value: veto.value, class: 'bg-red-800' },
-    { name: 'Abstain', value: abstain.value, class: 'bg-warning' },
+const voteOptions = computed(() => {
+  const tally = proposal.value?.final_tally_result;
+  const defs = [
+    {
+      key: 'yes',
+      name: 'Yes',
+      raw: tally?.yes,
+      barClass: 'bg-success text-success-content',
+      dotClass: 'bg-success',
+    },
+    {
+      key: 'no',
+      name: 'No',
+      raw: tally?.no,
+      barClass: 'bg-error text-error-content',
+      dotClass: 'bg-error',
+    },
+    {
+      key: 'no_with_veto',
+      name: 'No With Veto',
+      raw: tally?.no_with_veto,
+      barClass: 'bg-red-800 text-white',
+      dotClass: 'bg-red-800',
+    },
+    {
+      key: 'abstain',
+      name: 'Abstain',
+      raw: tally?.abstain,
+      barClass: 'bg-warning text-warning-content',
+      dotClass: 'bg-warning',
+    },
   ];
+
+  return defs.map((item) => {
+    const amount = Number(item.raw || 0);
+    const ratio =
+      total.value > 0 && Number.isFinite(amount) && amount > 0
+        ? amount / total.value
+        : 0;
+    const rawPercent = ratio * 100;
+    return {
+      key: item.key,
+      name: item.name,
+      barClass: item.barClass,
+      dotClass: item.dotClass,
+      rawPercent,
+      width: rawPercent > 0 ? `${rawPercent}%` : '0%',
+      value: ratio > 0 ? format.percent(ratio) : '0%',
+    };
+  });
 });
 
 function metaItem(metadata: string | undefined): { title: string; summary: string } {
@@ -297,12 +321,14 @@ const proposalContentMeta = computed(() => {
         <h2 class="text-xl font-semibold text-base-content leading-snug break-words">
           {{ proposal_id }}. {{ proposalTitle }}
         </h2>
-        <div
-          class="badge badge-ghost shrink-0 self-start md:mt-0.5"
-          :class="color === 'success' ? 'text-yes' : color === 'error' ? 'text-no' : 'text-info'"
+        <span
+          v-if="status"
+          class="inline-flex items-center justify-center rounded-md px-3 py-1 text-sm font-semibold tracking-wide whitespace-nowrap shrink-0 self-start md:mt-0.5"
+          :class="statusBadgeClass"
+          data-proposal-header-status
         >
           {{ status }}
-        </div>
+        </span>
       </div>
       <div
         v-if="proposalContentMeta"
@@ -334,37 +360,82 @@ const proposalContentMeta = computed(() => {
     <div class="gap-4 mb-4 grid lg:!!grid-cols-3 auto-rows-max">
       <!-- flex-1 -->
       <div class="bg-base-100 px-4 pt-3 pb-4 rounded shadow">
-        <h2 class="card-title mb-1">{{ $t('gov.tally') }}</h2>
-        <div class="mb-1" v-for="(item, index) of processList" :key="index">
-          <label class="block text-sm mb-1">{{ item.name }}</label>
-          <div class="h-5 w-full relative">
-            <div class="absolute inset-x-0 inset-y-0 w-full opacity-10 rounded-sm" :class="`${item.class}`"></div>
+        <h2 class="card-title mb-2">{{ $t('gov.tally') }}</h2>
+        <div class="mb-3" data-proposal-turnout-row>
+          <label class="block text-sm mb-1">Turnout</label>
+          <div class="h-5 w-full relative overflow-hidden rounded-sm">
+            <div class="absolute inset-0 w-full opacity-10 bg-info"></div>
             <div
-              class="absolute inset-x-0 inset-y-0 rounded-sm"
-              :class="`${item.class}`"
-              :style="`width: ${item.value === '-' || item.value === 'NaN%' ? '0%' : item.value}`"
+              class="absolute inset-y-0 left-0 bg-info"
+              :style="{ width: turnoutBarWidth }"
+              data-proposal-turnout-bar
             ></div>
             <p
-              class="absolute inset-x-0 inset-y-0 text-center text-sm text-base-content flex items-center justify-center"
+              class="absolute inset-0 text-center text-sm text-base-content flex items-center justify-center"
             >
-              {{ item.value }}
+              {{ turnout }}
             </p>
           </div>
+          <p
+            v-if="turnoutSnapshot"
+            class="text-xs text-base-content/70 mt-1.5"
+            data-proposal-turnout-note
+          >
+            <template v-if="turnoutSnapshot.available">
+              Turnout is a live estimate using current bonded pool{{
+                turnoutSnapshot.height ? ` at height #${turnoutSnapshot.height}` : ''
+              }}.
+            </template>
+            <template v-else>
+              Turnout unavailable: {{ turnoutSnapshot.reason }}
+            </template>
+          </p>
         </div>
-        <p
-          v-if="turnoutSnapshot"
-          class="text-xs text-base-content/70 mt-2"
-          data-proposal-turnout-note
-        >
-          <template v-if="turnoutSnapshot.available">
-            Turnout is a live estimate using current bonded pool{{
-              turnoutSnapshot.height ? ` at height #${turnoutSnapshot.height}` : ''
-            }}.
-          </template>
-          <template v-else>
-            Turnout unavailable: {{ turnoutSnapshot.reason }}
-          </template>
-        </p>
+        <div class="mb-1" data-proposal-votes-summary>
+          <label class="block text-sm mb-1">{{ $t('gov.votes') }}</label>
+          <div
+            class="h-5 w-full rounded-sm overflow-hidden flex bg-base-content/10 relative"
+            data-proposal-tally-bar
+          >
+            <div
+              v-for="item in voteOptions"
+              :key="item.key"
+              class="h-full flex items-center justify-center text-xs font-medium overflow-hidden whitespace-nowrap transition-all duration-200"
+              :class="item.barClass"
+              :style="{ width: item.width }"
+              :title="`${item.name}: ${item.value}`"
+            >
+              <span v-if="item.rawPercent >= 15" class="px-1 truncate">
+                {{ item.value }}
+              </span>
+            </div>
+            <p
+              v-if="total <= 0"
+              class="absolute inset-0 text-center text-sm text-base-content/70 flex items-center justify-center"
+            >
+              0%
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-2 text-xs">
+            <div
+              v-for="item in voteOptions"
+              :key="item.key"
+              class="flex items-center justify-between gap-1.5 min-w-0"
+            >
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span
+                  class="w-2.5 h-2.5 rounded-sm shrink-0"
+                  :class="item.dotClass"
+                  aria-hidden="true"
+                ></span>
+                <span class="text-base-content/80 truncate">{{ item.name }}</span>
+              </div>
+              <span class="font-medium text-base-content tabular-nums shrink-0">
+                {{ item.value }}
+              </span>
+            </div>
+          </div>
+        </div>
         <div class="mt-6 grid grid-cols-2">
           <label
             for="vote"

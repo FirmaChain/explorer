@@ -1,17 +1,15 @@
 <script lang="ts" setup>
-import { useBlockchain, useFormatter, useStakingStore, useTxDialog } from '@/stores';
+import { useBlockchain, useFormatter, useTxDialog } from '@/stores';
 import { select } from '@/components/dynamic/index';
 import type { PaginatedProposals } from '@/types';
-import ProposalProcess from './ProposalProcess.vue';
 import type { PropType } from 'vue';
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 const dialog = useTxDialog();
 defineProps({
   proposals: { type: Object as PropType<PaginatedProposals> },
 });
 
 const format = useFormatter();
-const staking = useStakingStore();
 const chain = useBlockchain();
 function showType(v: string) {
   if (v) {
@@ -25,12 +23,17 @@ const statusMap: Record<string, string> = {
   PROPOSAL_STATUS_PASSED: 'PASSED',
   PROPOSAL_STATUS_REJECTED: 'REJECTED',
 };
-const voterStatusMap: Record<string, string> = {
-  VOTE_OPTION_NO_WITH_VETO: '',
-  VOTE_OPTION_YES: 'success',
-  VOTE_OPTION_NO: 'error',
-  VOTE_OPTION_ABSTAIN: 'warning',
-};
+
+function statusLabel(status?: string) {
+  return (status && statusMap[status]) || status || '';
+}
+
+function statusBadgeClass(status?: string) {
+  const mapped = status ? statusMap[status] : '';
+  if (mapped === 'PASSED') return 'bg-yes/20 text-yes';
+  if (mapped === 'REJECTED') return 'bg-no/20 text-no';
+  return 'bg-info/20 text-info';
+}
 
 const proposalInfo = ref();
 
@@ -70,45 +73,23 @@ function metaItem(metadata: string | undefined): { title: string; summary: strin
               </div>
             </div>
           </td>
-          <td class="w-60">
-            <ProposalProcess :pool="staking.pool" :tally="item.final_tally_result"></ProposalProcess>
+          <td class="w-36 px-2" data-proposal-status>
+            <span
+              class="inline-flex items-center justify-center rounded-md px-3 py-1 text-sm font-semibold tracking-wide whitespace-nowrap"
+              :class="statusBadgeClass(item?.status)"
+            >
+              {{ statusLabel(item?.status) }}
+            </span>
           </td>
-          <td class="w-36">
-            <div class="pl-4">
-              <div
-                class="flex items-center"
-                :class="
-                  statusMap?.[item?.status] === 'PASSED'
-                    ? 'text-yes'
-                    : statusMap?.[item?.status] === 'REJECTED'
-                    ? 'text-no'
-                    : 'text-info'
-                "
-              >
-                <div
-                  class="w-1 h-1 rounded-full mr-2"
-                  :class="
-                    statusMap?.[item?.status] === 'PASSED'
-                      ? 'bg-yes'
-                      : statusMap?.[item?.status] === 'REJECTED'
-                      ? 'bg-no'
-                      : 'bg-info'
-                  "
-                ></div>
-                <div class="text-xs">
-                  {{ statusMap?.[item?.status] || item?.status }}
-                </div>
-              </div>
-              <div
-                class="truncate col-span-2 md:!col-span-1 text-xs text-base-content/70 text-right md:!flex md:!justify-start"
-              >
-                {{ format.toDay(item.voting_end_time, 'from') }}
-              </div>
-            </div>
+          <td
+            class="w-36 px-4 text-right text-sm font-medium text-base-content/80 tabular-nums whitespace-nowrap"
+            data-proposal-date
+          >
+            {{ format.toDay(item.voting_end_time, 'date') }}
           </td>
 
-          <td v-if="statusMap?.[item?.status] === 'VOTING'" class="w-40">
-            <div class="">
+          <td v-if="statusMap?.[item?.status] === 'VOTING'" class="w-32 pr-4 text-right">
+            <div>
               <label
                 for="vote"
                 class="btn btn-xs btn-primary rounded-sm"
@@ -130,7 +111,7 @@ function metaItem(metadata: string | undefined): { title: string; summary: strin
       </tbody>
     </table>
 
-    <div class="lg:!hidden">
+    <div class="lg:!hidden divide-y divide-base-300/50">
       <div v-for="(item, index) in proposals?.proposals" :key="index" class="px-4 py-4">
         <div class="text-main text-base mb-1 flex justify-between hover:text-indigo-400">
           <RouterLink :to="`/${chain.chainName}/gov/${item?.proposal_id}`" class="flex-1 w-0 truncate mr-4">{{
@@ -145,52 +126,27 @@ function metaItem(metadata: string | undefined): { title: string; summary: strin
           >
         </div>
 
-        <div class="grid grid-cols-4 mt-2 mb-2">
-          <div class="col-span-2">
-            <div
-              v-if="item.content"
-              class="bg-base-200 text-base-content/80 inline-block rounded-full px-2 py-[1px] text-xs mb-1"
-            >
-              {{ showType(item.content['@type']) }}
-            </div>
-          </div>
-
-          <div class="truncate text-xs text-base-content/70 flex items-center justify-end">
-            {{ format.toDay(item.voting_end_time, 'from') }}
+        <div v-if="item.content" class="mt-2">
+          <div
+            class="bg-base-200 text-base-content/80 inline-block rounded-full px-2 py-[1px] text-xs"
+          >
+            {{ showType(item.content['@type']) }}
           </div>
         </div>
 
-        <div>
-          <ProposalProcess :pool="staking.pool" :tally="item.final_tally_result"></ProposalProcess>
-        </div>
-
-        <div class="mt-4" v-if="statusMap?.[item?.status] === 'VOTING'">
-          <div class="flex justify-between">
-            <div
-              class="flex items-center"
-              :class="
-                statusMap?.[item?.status] === 'PASSED'
-                  ? 'text-yes'
-                  : statusMap?.[item?.status] === 'REJECTED'
-                  ? 'text-no'
-                  : 'text-info'
-              "
-            >
-              <div
-                class="w-1 h-1 rounded-full mr-2"
-                :class="
-                  statusMap?.[item?.status] === 'PASSED'
-                    ? 'bg-yes'
-                    : statusMap?.[item?.status] === 'REJECTED'
-                    ? 'bg-no'
-                    : 'bg-info'
-                "
-              ></div>
-              <div class="text-xs flex items-center">
-                {{ statusMap?.[item?.status] || item?.status }}
-              </div>
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <span
+            class="inline-flex items-center justify-center rounded-md px-2.5 py-1 text-sm font-semibold tracking-wide whitespace-nowrap"
+            :class="statusBadgeClass(item?.status)"
+          >
+            {{ statusLabel(item?.status) }}
+          </span>
+          <div class="flex items-center gap-3">
+            <div class="truncate text-sm font-medium text-base-content/80 tabular-nums">
+              {{ format.toDay(item.voting_end_time, 'date') }}
             </div>
             <label
+              v-if="statusMap?.[item?.status] === 'VOTING'"
               for="vote"
               class="btn btn-xs btn-primary rounded-sm"
               @click="

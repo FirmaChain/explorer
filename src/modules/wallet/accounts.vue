@@ -155,12 +155,6 @@ async function addAddress(acc: AccountEntry) {
     conf.value[key] = [acc];
   }
 
-  // also add chain to favorite
-  if (!dashboard?.favoriteMap?.[acc.chainName]) {
-    dashboard.favoriteMap[acc.chainName] = true;
-    window.localStorage.setItem('favoriteMap', JSON.stringify(dashboard.favoriteMap));
-  }
-
   if (acc.endpoint) {
     loadBalances(acc.chainName, acc.endpoint, acc.address);
   }

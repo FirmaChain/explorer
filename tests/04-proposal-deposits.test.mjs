@@ -102,6 +102,10 @@ test('renders paginated deposits with multi-denom amounts, opaque cursors, retry
   assert.equal(rows(mounted.container).length, 1);
   assert.match(rows(mounted.container)[0], /firma1dep1.*10 FCT/);
   assert.equal(
+    findAll(mounted.container, (el) => el.type === 'nav').length,
+    1
+  );
+  assert.equal(
     findAll(mounted.container, (el) => el.type === 'a')[0].props.href,
     '/firmachain/account/firma1dep1'
   );
@@ -126,5 +130,9 @@ test('renders paginated deposits with multi-denom amounts, opaque cursors, retry
   assert.match(
     text(mounted.container),
     /does not indicate zero historical deposits/
+  );
+  assert.equal(
+    findAll(mounted.container, (el) => el.type === 'nav').length,
+    0
   );
 });

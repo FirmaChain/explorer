@@ -4,7 +4,7 @@ import { nextTick, reactive } from 'vue';
 import { sha256 } from '@cosmjs/crypto';
 import { toBase64, toHex } from '@cosmjs/encoding';
 import { loadProduct, mount } from './helpers/validator-renderer.mjs';
-import { text } from './helpers/validator-renderer.mjs';
+import { findAll, text } from './helpers/validator-renderer.mjs';
 
 function makeVal(seed, power) {
   const pub = Buffer.alloc(32, seed);
@@ -99,6 +99,12 @@ test('computes commit-signed online voting power across paginated validator set 
   assert.match(text(mounted.container), /70\.00%/);
   assert.match(text(mounted.container), /70 \/ 100/);
   assert.match(text(mounted.container), /1 \/ 2/);
+  const progressBars = findAll(
+    mounted.container,
+    (el) => el.props.role === 'progressbar'
+  );
+  assert.equal(progressBars.length, 1);
+  assert.equal(progressBars[0].props['aria-valuenow'], 70);
 
   // Updating block commit height with the same validators (< 60s TTL) reuses cache with 0 RPC calls
   let valsetCalls = 0;
@@ -124,7 +130,7 @@ test('computes commit-signed online voting power across paginated validator set 
   assert.equal(valsetCalls, 0);
   assert.doesNotMatch(text(mounted.container), /Loading online voting power/);
   assert.match(text(mounted.container), /100\.00%/);
-  assert.match(text(mounted.container), /height #501/);
+  assert.doesNotMatch(text(mounted.container), /height #/);
 
   // When a new validator appears in signatures, re-fetches immediately without flashing Loading state
   const v3 = makeVal(3, 50);
@@ -157,7 +163,7 @@ test('computes commit-signed online voting power across paginated validator set 
   await new Promise((r) => setTimeout(r, 20));
   await nextTick();
   assert.match(text(mounted.container), /3 \/ 3/);
-  assert.match(text(mounted.container), /height #502/);
+  assert.doesNotMatch(text(mounted.container), /height #/);
   blockchain.rpc.getBaseValidatorsetAt = origGet;
 
   mode = 'partial';
@@ -276,4 +282,88 @@ test('reuses cached validator set across blocks within 60s and invalidates on TT
   assert.equal(calls, 2);
   assert.equal(r3.signedPower, 100n);
   assert.equal(r3.totalPower, 150n);
+});
+
+test('fetches latest block once immediately on initial render when baseStore.latest is empty', async (t) => {
+  const v1 = makeVal(1, 80);
+  const v2 = makeVal(2, 20);
+
+  const addresses = await loadProduct('src/libs/address.ts');
+  const types = await loadProduct('src/types/common.ts');
+  const concentration = await loadProduct('src/libs/stakingConcentration.ts', {
+    '@/libs/address': addresses,
+    '@/types': types,
+  });
+  const blockSigs = await loadProduct('src/libs/blockSignatures.ts', {
+    '@/libs/address': addresses,
+    '@/libs/stakingConcentration': concentration,
+    '@/types': types,
+  });
+  const metrics = await loadProduct('src/libs/dashboardMetrics.ts', {
+    'cross-fetch': fetch,
+    '@/libs/address': addresses,
+    '@/libs/blockSignatures': blockSigs,
+    '@/libs/stakingConcentration': concentration,
+    '@/types': types,
+  });
+
+  let latestCalls = 0;
+  let valsetCalls = 0;
+  const latestBlockPayload = {
+    block: {
+      header: { height: '701', chain_id: 'firmachain-1' },
+      last_commit: {
+        height: '700',
+        signatures: [
+          { block_id_flag: 'BLOCK_ID_FLAG_COMMIT', validator_address: v1.b64 },
+          { block_id_flag: 'BLOCK_ID_FLAG_ABSENT', validator_address: v2.b64 },
+        ],
+      },
+    },
+  };
+
+  const baseStore = reactive({ latest: {} });
+  const blockchain = reactive({
+    chainName: 'firmachain',
+    endpoint: { address: 'https://node-a.example' },
+    rpc: {
+      getBaseBlockLatest: async () => {
+        latestCalls += 1;
+        return latestBlockPayload;
+      },
+      getBaseValidatorsetAt: async (h) => {
+        valsetCalls += 1;
+        return { block_height: String(h), validators: [v1.tm, v2.tm], pagination: {} };
+      },
+    },
+  });
+
+  const comp = (
+    await loadProduct('src/components/DashboardVotingPower.vue', {
+      '@/stores': {
+        useBaseStore: () => baseStore,
+        useBlockchain: () => blockchain,
+        useStakingStore: () => ({ validators: [] }),
+      },
+      '@/libs/dashboardMetrics': metrics,
+    })
+  ).default;
+
+  const mounted = mount(comp, reactive({ chain: 'firmachain' }));
+  t.after(() => mounted.app.unmount());
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+
+  assert.equal(latestCalls, 1);
+  assert.equal(valsetCalls, 1);
+  assert.match(text(mounted.container), /80\.00%/);
+  assert.match(text(mounted.container), /80 \/ 100/);
+  assert.doesNotMatch(text(mounted.container), /height #/);
+
+  // When baseStore.latest later hydrates with the same commit height, avoid duplicate requests
+  baseStore.latest = latestBlockPayload;
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+  assert.equal(latestCalls, 1);
+  assert.equal(valsetCalls, 1);
 });

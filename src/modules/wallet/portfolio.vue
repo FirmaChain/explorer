@@ -1,13 +1,13 @@
 <script lang="ts" setup>
 import { CosmosRestClient } from '@/libs/client';
 import type { Coin, Delegation } from '@/types';
-import { ref, watchEffect } from 'vue';
+import { onScopeDispose, ref, watchEffect } from 'vue';
 import type { AccountEntry } from './utils';
 import { computed } from 'vue';
 import { useBaseStore, useBlockchain, useFormatter, useStorageStore } from '@/stores';
 import DonutChart from '@/components/charts/DonutChart.vue';
 import ApexCharts from 'vue3-apexcharts';
-import { get } from '@/libs';
+import { subscribePrice } from '@/libs/priceWorkerClient';
 import { getMarketPriceChartConfig } from '@/components/charts/apexChartConfig';
 import AdBanner from '@/components/ad/AdBanner.vue';
 
@@ -160,17 +160,35 @@ const tokenList = computed(() => {
   return list.filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
 });
 
+let stopPortfolioPriceSubscription: (() => void) | null = null;
+
 function loadPrice() {
   localStorage.setItem('currency', currency.value);
-  const ids = Object.values(tokenQty.value)
-    .map((x) => x.coinId)
-    .join(',');
-  get(
-    `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${currency.value}&ids=${ids}&order=market_cap_desc&per_page=100&page=1&sparkline=true&price_change_percentage=14d&locale=en`
-  ).then((res) => {
-    prices.value = res;
+  const ids = Array.from(
+    new Set(
+      Object.values(tokenQty.value)
+        .map((x) => x.coinId)
+        .filter(Boolean)
+    )
+  ).join(',');
+  stopPortfolioPriceSubscription?.();
+  stopPortfolioPriceSubscription = null;
+  if (!ids) {
+    prices.value = [];
+    return;
+  }
+  const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${currency.value}&ids=${ids}&order=market_cap_desc&per_page=100&page=1&sparkline=true&price_change_percentage=14d&locale=en`;
+  stopPortfolioPriceSubscription = subscribePrice(url, (res) => {
+    if (Array.isArray(res)) {
+      prices.value = res;
+    }
   });
 }
+
+onScopeDispose(() => {
+  stopPortfolioPriceSubscription?.();
+  stopPortfolioPriceSubscription = null;
+});
 const totalChangeIn24 = computed(() => {
   return Object.values(tokenQty.value)
     .map((x) => {

@@ -1,9 +1,12 @@
 import { defineStore } from 'pinia';
 import { get } from '@/libs/http';
+import { subscribePrice } from '@/libs/priceWorkerClient';
 import type { ChainConfig, DirectoryChainConfig, Endpoint, LocalChainConfig } from '@/types/chaindata';
 import { ConfigSource, NetworkType } from '@/types/chaindata';
 import { useBlockchain } from './useBlockchain';
 import { coingeckoUrl } from '@/stores';
+
+let unsubscribeDashboardPrices: (() => void) | null = null;
 
 function apiConverter(api: any[]) {
   if (!api) return [];
@@ -182,14 +185,15 @@ export const useDashboard = defineStore('dashboard', {
           });
       });
 
-      if (coinIds.length === 0) return;
+      const uniqueCoinIds = Array.from(new Set(coinIds));
+      if (uniqueCoinIds.length === 0) return;
 
       const currencies = ['usd, cny']; // usd,cny,eur,jpy,krw,sgd,hkd
-      get(
-        `${coingeckoUrl}/api/v3/simple/price?include_24hr_change=true&vs_currencies=${currencies.join(
-          ','
-        )}&ids=${coinIds.join(',')}`
-      ).then((x) => {
+      const url = `${coingeckoUrl}/api/v3/simple/price?include_24hr_change=true&vs_currencies=${currencies.join(
+        ','
+      )}&ids=${uniqueCoinIds.join(',')}`;
+      unsubscribeDashboardPrices?.();
+      unsubscribeDashboardPrices = subscribePrice(url, (x) => {
         this.prices = x;
       });
     },

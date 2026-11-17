@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { get } from '@/libs/http';
+import { fetchPriceCached, subscribePrice } from '@/libs/priceWorkerClient';
 import type { LoadingStatus } from '@/stores';
 
 export interface PriceMeta {
@@ -15,6 +15,16 @@ const LocalStoreKey = 'currency';
 
 export const coingeckoUrl = import.meta.env.VITE_COINGECKO_URL || 'https://api.coingecko.com';
 
+let unsubscribeCoinPrice: (() => void) | null = null;
+
+function marketChartUrl(days = 30, coinId = 'cosmos') {
+  return `${coingeckoUrl}/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}`;
+}
+
+function coinInfoUrl(coinId: string) {
+  return `${coingeckoUrl}/api/v3/coins/${coinId}`;
+}
+
 export const useCoingecko = defineStore('coingecko', {
   state: () => {
     const currency = localStorage.getItem(LocalStoreKey);
@@ -29,20 +39,30 @@ export const useCoingecko = defineStore('coingecko', {
 
   actions: {
     getMarketChart(days = 30, coinId = 'cosmos') {
-      return get(`${coingeckoUrl}/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}`);
+      return fetchPriceCached(marketChartUrl(days, coinId));
+    },
+
+    subscribeMarketChart(days = 30, coinId = 'cosmos', onData: (data: any) => void) {
+      return subscribePrice(marketChartUrl(days, coinId), onData);
     },
 
     fetchCoinPrice(ids: string[]) {
-      const url = `${coingeckoUrl}/api/v3/simple/price?include_24hr_change=true&vs_currencies=${[
-        'usd',
-        this.currency,
-      ].join(',')}&ids=${ids.join(',')}`;
-      get(url).then((data) => {
+      const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+      if (uniqueIds.length === 0) return;
+      const currencies = this.currency ? ['usd', this.currency] : ['usd'];
+      const url = `${coingeckoUrl}/api/v3/simple/price?include_24hr_change=true&vs_currencies=${currencies.join(
+        ','
+      )}&ids=${uniqueIds.join(',')}`;
+      unsubscribeCoinPrice?.();
+      unsubscribeCoinPrice = subscribePrice(url, (data) => {
         this.prices = { ...this.prices, ...data };
       });
     },
     getCoinInfo(coinId: string) {
-      return get(`${coingeckoUrl}/api/v3/coins/${coinId}`);
+      return fetchPriceCached(coinInfoUrl(coinId));
+    },
+    subscribeCoinInfo(coinId: string, onData: (data: any) => void) {
+      return subscribePrice(coinInfoUrl(coinId), onData);
     },
     setSecondaryCurrency(currency: string) {
       if (currency !== 'usd') {

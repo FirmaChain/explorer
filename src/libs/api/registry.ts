@@ -83,6 +83,10 @@ export interface RequestRegistry extends AbstractRegistry {
     params: {
       mint_denom: string;
       blocks_per_year: string;
+      inflation_rate_change?: string;
+      inflation_max?: string;
+      inflation_min?: string;
+      goal_bonded?: string;
     };
   }>;
   mint_annual_provisions: Request<{ annual_provisions: string }>;
@@ -107,12 +111,14 @@ export interface RequestRegistry extends AbstractRegistry {
   staking_params: Request<StakingParam>;
   staking_pool: Request<StakingPool>;
   staking_validators: Request<PaginatedValdiators>;
+  staking_validators_paginated: Request<PaginatedValdiators>;
   staking_validators_address: Request<{ validator: Validator }>;
   staking_validators_delegations: Request<PaginatedDelegations>;
   staking_validators_delegations_delegator: Request<{
     delegation_response: Delegation;
   }>;
   staking_validators_delegations_unbonding_delegations: Request<PaginatedUnbonding>;
+  staking_validators_unbonding_delegations: Request<PaginatedUnbonding>;
 
   base_tendermint_abci_query: Request<any>;
   base_tendermint_block_latest: Request<Block>;

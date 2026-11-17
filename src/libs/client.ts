@@ -168,8 +168,9 @@ export class CosmosRestClient extends BaseRestClient<RequestRegistry> {
       proposal_id,
     });
   }
-  async getGovProposalDeposits(proposal_id: string) {
-    return this.request(this.registry.gov_proposals_deposits, { proposal_id });
+  async getGovProposalDeposits(proposal_id: string, page?: PageRequest) {
+    const query = page ? `?${page.toQueryString()}` : '';
+    return this.request(this.registry.gov_proposals_deposits, { proposal_id }, query);
   }
   async getGovProposalTally(proposal_id: string) {
     return this.request(this.registry.gov_proposals_tally, { proposal_id }, undefined, (source: any) => {
@@ -185,8 +186,7 @@ export class CosmosRestClient extends BaseRestClient<RequestRegistry> {
   }
   async getGovProposalVotes(proposal_id: string, page?: PageRequest) {
     if (!page) page = new PageRequest();
-    page.reverse = true;
-    const query = `?proposal_status={status}&${page.toQueryString()}`;
+    const query = `?${page.toQueryString()}`;
     return this.request(this.registry.gov_proposals_votes, { proposal_id }, query);
   }
   async getGovProposalVotesVoter(proposal_id: string, voter: string) {
@@ -203,10 +203,15 @@ export class CosmosRestClient extends BaseRestClient<RequestRegistry> {
       delegation_responses: response.delegation_responses.filter((delegation) => delegation.balance.amount !== '0'),
     };
   }
-  async getStakingDelegatorRedelegations(delegator_addr: string) {
-    return this.request(this.registry.staking_delegator_redelegations, {
-      delegator_addr,
-    });
+  async getStakingDelegatorRedelegations(delegator_addr: string, page?: PageRequest) {
+    const query = page ? `?${page.toQueryString()}` : '';
+    return this.request(
+      this.registry.staking_delegator_redelegations,
+      {
+        delegator_addr,
+      },
+      query
+    );
   }
   async getStakingDelegatorUnbonding(delegator_addr: string) {
     return this.request(this.registry.staking_delegator_unbonding_delegations, {
@@ -226,6 +231,14 @@ export class CosmosRestClient extends BaseRestClient<RequestRegistry> {
   }
   async getStakingValidators(status: string, limit = 200) {
     return this.request(this.registry.staking_validators, { status, limit });
+  }
+  async getStakingValidatorsPage(status: string, page?: PageRequest) {
+    const p = page || new PageRequest();
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    const pageQuery = p.toQueryString();
+    const query = `?${params.toString()}${pageQuery ? `&${pageQuery}` : ''}`;
+    return this.request(this.registry.staking_validators_paginated, {}, query);
   }
   async getStakingValidator(validator_addr: string) {
     return this.request(this.registry.staking_validators_address, {
@@ -257,6 +270,19 @@ export class CosmosRestClient extends BaseRestClient<RequestRegistry> {
       delegator_addr,
     });
   }
+  async getStakingValidatorsUnbondings(validator_addr: string, page?: PageRequest) {
+    if (!page) {
+      page = new PageRequest();
+    }
+    const query = `?${page.toQueryString()}`;
+    return this.request(
+      this.registry.staking_validators_unbonding_delegations,
+      {
+        validator_addr,
+      },
+      query
+    );
+  }
 
   //tendermint
   async getBaseAbciQuery() {
@@ -271,8 +297,10 @@ export class CosmosRestClient extends BaseRestClient<RequestRegistry> {
   async getBaseNodeInfo() {
     return this.request(this.registry.base_tendermint_node_info, {});
   }
-  async getBaseValidatorsetAt(height: string | number, offset: number) {
-    const query = `?pagination.limit=100&pagination.offset=${offset}`;
+  async getBaseValidatorsetAt(height: string | number, offset: number, page?: PageRequest) {
+    const query = page
+      ? `?${page.toQueryString()}`
+      : `?pagination.limit=100&pagination.offset=${offset}`;
     return this.request(
       this.registry.base_tendermint_validatorsets_height,
       {
@@ -281,8 +309,10 @@ export class CosmosRestClient extends BaseRestClient<RequestRegistry> {
       query
     );
   }
-  async getBaseValidatorsetLatest(offset: number) {
-    const query = `?pagination.limit=100&pagination.offset=${offset}`;
+  async getBaseValidatorsetLatest(offset: number, page?: PageRequest) {
+    const query = page
+      ? `?${page.toQueryString()}`
+      : `?pagination.limit=100&pagination.offset=${offset}`;
     return this.request(this.registry.base_tendermint_validatorsets_latest, {}, query);
   }
   // tx
@@ -304,11 +334,34 @@ export class CosmosRestClient extends BaseRestClient<RequestRegistry> {
   // ?&pagination.reverse=true&events=recv_packet.packet_dst_channel='${channel}'&events=recv_packet.packet_dst_port='${port}'
   async getTxs(query: string, params: any, page?: PageRequest) {
     if (!page) page = new PageRequest();
-    if (semver.gte(this.version.replaceAll('v', ''), '0.50.0')) {
-      let query_edit = query.replaceAll('events=', 'query=');
-      return this.request(this.registry.tx_txs, params, `${query_edit}&order_by=ORDER_BY_DESC&${page.toQueryString()}`);
+    const cleanVer = this.version.replaceAll('v', '');
+    const limit = page.limit || 20;
+    const pageNum = Math.floor((page.offset || 0) / limit) + 1;
+    if (semver.gte(cleanVer, '0.50.0')) {
+      const query_edit = query
+        .replaceAll('events=', 'query=')
+        .replace(/([?&])order_by=\d+&?/, '$1')
+        .replace(/[?&]$/, '');
+      const pageParams = query_edit.includes('limit=')
+        ? ''
+        : `&page=${pageNum}&limit=${limit}`;
+      return this.request(
+        this.registry.tx_txs,
+        params,
+        `${query_edit}&order_by=ORDER_BY_DESC${pageParams}`
+      );
     } else {
-      return this.request(this.registry.tx_txs, params, `${query}&${page.toQueryString()}`);
+      const pageParams =
+        semver.valid(cleanVer) &&
+        semver.gte(cleanVer, '0.46.0') &&
+        !query.includes('limit=')
+          ? `&page=${pageNum}&limit=${limit}`
+          : '';
+      return this.request(
+        this.registry.tx_txs,
+        params,
+        `${query}${pageParams}&${page.toQueryString()}`
+      );
     }
   }
   async getTxsAt(height: string | number) {

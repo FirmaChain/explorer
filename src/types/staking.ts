@@ -31,15 +31,18 @@ export interface CommissionRate {
   update_time: string;
 }
 
+export interface UnbondingEntry {
+  creation_height: string;
+  completion_time: string;
+  initial_balance: string;
+  balance: string;
+  unbonding_id?: string;
+}
+
 export interface UnbondingResponses {
   delegator_address: string;
   validator_address: string;
-  entries: {
-    creation_height: string;
-    completion_time: string;
-    initial_balance: string;
-    balance: string;
-  }[];
+  entries: UnbondingEntry[];
 }
 
 export interface Delegation {
@@ -51,7 +54,27 @@ export interface Delegation {
   balance: Coin;
 }
 
-export interface Redelegation {}
+export interface RedelegationEntry {
+  creation_height: string;
+  completion_time: string;
+  initial_balance: string;
+  shares_dst: string;
+}
+
+export interface RedelegationEntryResponse {
+  redelegation_entry: RedelegationEntry;
+  balance: string;
+}
+
+export interface Redelegation {
+  redelegation: {
+    delegator_address: string;
+    validator_src_address: string;
+    validator_dst_address: string;
+    entries?: RedelegationEntry[];
+  };
+  entries: RedelegationEntryResponse[];
+}
 
 export interface StakingParam {
   params: {

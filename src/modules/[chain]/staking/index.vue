@@ -1,11 +1,19 @@
 <script lang="ts" setup>
 import { useBaseStore, useBlockchain, useFormatter, useMintStore, useStakingStore, useTxDialog } from '@/stores';
 import { computed } from '@vue/reactivity';
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import type { Key, SlashingParam, Validator } from '@/types';
+import { consensusPubkeyToHexAddress, normalizeConsensusHex } from '@/libs';
 import { formatSeconds } from '@/libs/utils';
-import { diff } from 'semver';
+import {
+  computeValidatorConcentration,
+  fetchCompleteConsensusValidatorSet,
+  filterAndSortValidators,
+  type ConsensusSetResult,
+  type SortDirection,
+  type ValidatorSortKey,
+} from '@/libs/stakingConcentration';
 
 const staking = useStakingStore();
 const base = useBaseStore();
@@ -21,18 +29,63 @@ const yesterday = ref({} as Record<string, number>);
 const tab = ref('active');
 const unbondList = ref([] as Validator[]);
 const slashing = ref({} as SlashingParam);
+const searchQuery = ref('');
+const sortKey = ref<ValidatorSortKey>('voting_power');
+const sortDir = ref<SortDirection>('desc');
+const consensusSet = ref<ConsensusSetResult>({
+  validators: [],
+  height: '',
+  complete: false,
+  error: 'Consensus validator set has not loaded yet.',
+});
+let loadGeneration = 0;
+
+function toggleSort(key: ValidatorSortKey) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc';
+  } else {
+    sortKey.value = key;
+    sortDir.value = key === 'moniker' ? 'asc' : 'desc';
+  }
+}
+
+async function loadPageData() {
+  const gen = ++loadGeneration;
+  unbondList.value = [];
+  if (!chainStore.rpc) {
+    consensusSet.value = {
+      validators: [],
+      height: '',
+      complete: false,
+      error: 'RPC client is unavailable.',
+    };
+    return;
+  }
+
+  const [unbonding, unbonded, slashingRes, consensusRes] = await Promise.all([
+    staking.fetchUnbondingValdiators().catch(() => []),
+    staking.fetchInacitveValdiators().catch(() => []),
+    chainStore.rpc.getSlashingParams().catch(() => undefined),
+    fetchCompleteConsensusValidatorSet(chainStore.rpc),
+  ]);
+
+  if (gen !== loadGeneration) return;
+  unbondList.value = [...(unbonding || []), ...(unbonded || [])];
+  if (slashingRes?.params) slashing.value = slashingRes.params;
+  consensusSet.value = consensusRes;
+}
 
 onMounted(() => {
-  staking.fetchUnbondingValdiators().then((res) => {
-    unbondList.value = res.concat(unbondList.value);
-  });
-  staking.fetchInacitveValdiators().then((res) => {
-    unbondList.value = unbondList.value.concat(res);
-  });
-  chainStore.rpc.getSlashingParams().then((res) => {
-    slashing.value = res.params;
-  });
+  loadPageData();
 });
+
+watch(
+  () => [chainStore.chainName, chainStore.endpoint.address],
+  ([nextChain, nextEndpoint], [prevChain, prevEndpoint]) => {
+    if (nextChain === prevChain && nextEndpoint === prevEndpoint) return;
+    loadPageData();
+  }
+);
 
 async function fetchChange(blockWindow: number = 14400) {
   let page = 0;
@@ -136,20 +189,81 @@ function isFeatured(endpoints: string[], who?: { website?: string; moniker: stri
   );
 }
 
+const concentration = computed(() =>
+  computeValidatorConcentration(
+    consensusSet.value.validators,
+    consensusSet.value.height,
+    consensusSet.value.complete,
+    consensusSet.value.error
+  )
+);
+
+const listIncompleteWarning = computed(() => {
+  const statuses =
+    tab.value === 'inactive'
+      ? ['BOND_STATUS_UNBONDING', 'BOND_STATUS_UNBONDED']
+      : ['BOND_STATUS_BONDED'];
+  const errors = statuses
+    .filter((s) => staking.validatorsComplete?.[s] === false)
+    .map((s) => staking.validatorsError?.[s] || `Incomplete ${s} validator list.`);
+  return errors.join(' ');
+});
+
 const list = computed(() => {
+  let baseItems: {
+    v: Validator;
+    rank: string;
+    logo: string;
+    change24: number;
+  }[] = [];
+
   if (tab.value === 'active') {
-    return staking.validators.map((x, i) => ({ v: x, rank: calculateRank(i), logo: logo(x.description.identity) }));
+    baseItems = staking.validators.map((x, i) => {
+      const hex = normalizeConsensusHex(
+        consensusPubkeyToHexAddress(x.consensus_pubkey)
+      );
+      const inTop34 = Boolean(
+        concentration.value.available &&
+          hex &&
+          concentration.value.boundaryHexes.has(hex)
+      );
+      return {
+        v: x,
+        rank: inTop34 ? 'error' : calculateRank(i),
+        logo: logo(x.description?.identity),
+        change24: change24(x),
+      };
+    });
   } else if (tab.value === 'featured') {
     const endpoint = chainStore.current?.endpoints?.rest?.map((x) => x.provider);
     if (endpoint) {
       endpoint.push('ping');
-      return staking.validators
-        .filter((x) => isFeatured(endpoint.filter(Boolean) as string[], x.description))
-        .map((x, i) => ({ v: x, rank: 'primary', logo: logo(x.description.identity) }));
+      baseItems = staking.validators
+        .filter((x) =>
+          isFeatured(endpoint.filter(Boolean) as string[], x.description)
+        )
+        .map((x) => ({
+          v: x,
+          rank: 'primary',
+          logo: logo(x.description?.identity),
+          change24: change24(x),
+        }));
     }
-    return [];
+  } else {
+    baseItems = unbondList.value.map((x) => ({
+      v: x,
+      rank: 'primary',
+      logo: logo(x.description?.identity),
+      change24: change24(x),
+    }));
   }
-  return unbondList.value.map((x, i) => ({ v: x, rank: 'primary', logo: logo(x.description.identity) }));
+
+  return filterAndSortValidators(
+    baseItems,
+    searchQuery.value,
+    sortKey.value,
+    sortDir.value
+  );
 });
 
 const fetchAvatar = (identity: string) => {
@@ -271,7 +385,7 @@ loadAvatars();
     </div>
 
     <div>
-      <div class="flex items-center justify-between py-1">
+      <div class="flex flex-wrap items-center justify-between gap-3 py-1">
         <div class="tabs tabs-boxed bg-transparent">
           <a class="tab text-gray-400" :class="{ 'tab-active': tab === 'featured' }" @click="tab = 'featured'">{{
             $t('staking.popular')
@@ -284,7 +398,24 @@ loadAvatars();
           }}</a>
         </div>
 
-        <div class="text-lg font-semibold">{{ list.length }}/{{ staking.params.max_validators }}</div>
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            v-model="searchQuery"
+            type="search"
+            aria-label="Search validators by moniker or operator address"
+            placeholder="Search moniker or address..."
+            class="input input-bordered input-xs !h-7 !min-h-0 text-xs w-56"
+          />
+          <div class="text-lg font-semibold leading-7">{{ list.length }}/{{ staking.params.max_validators }}</div>
+        </div>
+      </div>
+
+      <div
+        v-if="listIncompleteWarning"
+        role="alert"
+        class="alert alert-warning text-xs py-2 mb-2"
+      >
+        <span>Validator list may be partial: {{ listIncompleteWarning }}</span>
       </div>
 
       <div class="bg-base-100 px-4 pt-3 pb-4 rounded shadow">
@@ -295,14 +426,35 @@ loadAvatars();
                 <th scope="col" class="uppercase" style="width: 3rem; position: relative">
                   {{ $t('staking.rank') }}
                 </th>
-                <th scope="col" class="uppercase">{{ $t('staking.validator') }}</th>
-                <th scope="col" class="text-right uppercase">{{ $t('staking.voting_power') }}</th>
-                <th scope="col" class="text-right uppercase">{{ $t('staking.24h_changes') }}</th>
-                <th scope="col" class="text-right uppercase">{{ $t('staking.commission') }}</th>
+                <th scope="col" class="uppercase">
+                  <button type="button" class="uppercase font-bold" @click="toggleSort('moniker')">
+                    {{ $t('staking.validator') }}
+                  </button>
+                </th>
+                <th scope="col" class="text-right uppercase">
+                  <button type="button" class="uppercase font-bold" @click="toggleSort('voting_power')">
+                    {{ $t('staking.voting_power') }}
+                  </button>
+                </th>
+                <th scope="col" class="text-right uppercase">
+                  <button type="button" class="uppercase font-bold" @click="toggleSort('changes_24h')">
+                    {{ $t('staking.24h_changes') }}
+                  </button>
+                </th>
+                <th scope="col" class="text-right uppercase">
+                  <button type="button" class="uppercase font-bold" @click="toggleSort('commission')">
+                    {{ $t('staking.commission') }}
+                  </button>
+                </th>
                 <th scope="col" class="text-center uppercase">{{ $t('staking.actions') }}</th>
               </tr>
             </thead>
             <tbody>
+              <tr v-if="!list.length">
+                <td colspan="6" class="text-center py-6 text-sm text-base-content/70">
+                  No matching validators found.
+                </td>
+              </tr>
               <tr
                 v-for="({ v, rank, logo }, i) in list"
                 :key="v.operator_address"

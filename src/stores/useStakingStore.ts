@@ -9,6 +9,7 @@ import {
   pubKeyToValcons,
   valconsToBase64,
 } from '@/libs';
+import { fetchAllStakingValidators } from '@/libs/stakingConcentration';
 import {
   toHex,
   fromBase64,
@@ -36,6 +37,8 @@ export const useStakingStore = defineStore('stakingStore', {
         not_bonded_tokens: string;
       },
       keyRotation: {} as Record<string, string>,
+      validatorsComplete: {} as Record<string, boolean>,
+      validatorsError: {} as Record<string, string>,
     };
   },
   getters: {
@@ -148,13 +151,21 @@ export const useStakingStore = defineStore('stakingStore', {
       }
     },
     async fetchValidators(status: string, limit = 300) {
-      return this.blockchain.rpc?.getStakingValidators(status, limit).then((res) => {
-        const vals = res.validators.sort((a, b) => Number(b.delegator_shares) - Number(a.delegator_shares));
-        if (status === 'BOND_STATUS_BONDED') {
-          this.validators = vals;
-        }
-        return vals;
-      });
+      if (!this.blockchain.rpc) return [];
+      const result = await fetchAllStakingValidators(
+        this.blockchain.rpc,
+        status,
+        limit
+      );
+      this.validatorsComplete[status] = result.complete;
+      this.validatorsError[status] = result.error;
+      const vals = result.validators.sort(
+        (a, b) => Number(b.delegator_shares) - Number(a.delegator_shares)
+      );
+      if (status === 'BOND_STATUS_BONDED') {
+        this.validators = vals;
+      }
+      return vals;
     },
   },
 });

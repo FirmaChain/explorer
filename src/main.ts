@@ -1,6 +1,7 @@
 // import 'ping-widget';
 import App from '@/App.vue';
 import i18n from '@/plugins/i18n';
+import 'md-editor-v3/lib/style.css';
 import '@/style.css';
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';

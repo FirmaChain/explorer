@@ -31,17 +31,17 @@ function changeChart(type: string) {
 </script>
 
 <template>
-  <div class="tabs tabs-boxed bg-transparent justify-end">
+  <div class="tabs tabs-boxed bg-transparent justify-end gap-1 p-0 mb-1">
     <a
-      class="tab text-xs mr-2 text-base-content/60 uppercase"
-      :class="{ 'tab-active': kind === 'price' }"
+      class="tab text-xs uppercase"
+      :class="kind === 'price' ? 'tab-active !text-white' : 'text-base-content/60'"
       @click="changeChart('price')"
     >
       Price
     </a>
     <a
-      class="tab text-xs text-base-content/60 uppercase"
-      :class="{ 'tab-active': kind === 'volume' }"
+      class="tab text-xs uppercase"
+      :class="kind === 'volume' ? 'tab-active !text-white' : 'text-base-content/60'"
       @click="changeChart('volume')"
     >
       Volume

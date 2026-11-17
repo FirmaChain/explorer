@@ -30,6 +30,9 @@ const CODEMAP: Record<string, string[]> = {
   bybit: ['affiliate_id', 'JKRRZX9'],
 };
 
+let stopCoinInfoSubscription: (() => void) | null = null;
+let stopMarketChartSubscription: (() => void) | null = null;
+
 export const useIndexModule = defineStore('module-index', {
   state: () => {
     return {
@@ -112,8 +115,10 @@ export const useIndexModule = defineStore('module-index', {
     },
 
     priceChange(): string {
-      if (!this.coinInfo?.market_data?.price_change_percentage_24h) return '';
-      const change = this.coinInfo?.market_data?.price_change_percentage_24h || 0;
+      const raw = this.coinInfo?.market_data?.price_change_percentage_24h;
+      if (raw === null || raw === undefined || Number.isNaN(Number(raw))) return '';
+      const change = Number(raw);
+      if (change === 0) return '0';
       return numeral(change).format('+0.[00]');
     },
 
@@ -236,16 +241,25 @@ export const useIndexModule = defineStore('module-index', {
       return colorMap(color);
     },
     initCoingecko() {
+      stopCoinInfoSubscription?.();
+      stopCoinInfoSubscription = null;
+      stopMarketChartSubscription?.();
+      stopMarketChartSubscription = null;
+
       this.tickerIndex = 0;
       const [firstAsset] = this.blockchain?.assets || [];
       if (firstAsset && firstAsset.coingecko_id) {
-        this.coingecko.getCoinInfo(firstAsset.coingecko_id).then((x) => {
-          this.coinInfo = x;
-          // this.coinInfo.tickers.sort((a, b) => a.converted_last.usd - b.converted_last.usd)
+        const coinId = firstAsset.coingecko_id;
+        stopCoinInfoSubscription = this.coingecko.subscribeCoinInfo(coinId, (x) => {
+          if (x) this.coinInfo = x;
         });
-        this.coingecko.getMarketChart(this.days, firstAsset.coingecko_id).then((x) => {
-          this.marketData = x;
-        });
+        stopMarketChartSubscription = this.coingecko.subscribeMarketChart(
+          this.days,
+          coinId,
+          (x) => {
+            if (x) this.marketData = x;
+          }
+        );
       }
     },
     selectTicker(i: number) {
@@ -272,7 +286,8 @@ export function addOrReplaceUrlParam(url: string, param: string, value: string):
   return urlObj.toString();
 }
 
-export function tickerUrl(url: string) {
+export function tickerUrl(url?: string) {
+  if (!url) return '';
   for (const domain of Object.keys(CODEMAP)) {
     if (url.indexOf(domain) > -1) {
       const v = CODEMAP[domain];

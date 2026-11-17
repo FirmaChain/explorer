@@ -35,12 +35,28 @@ dayjs.updateLocale('en', {
   },
 });
 
+export type DateFormatMode = 'locale' | 'utc';
+const DATE_FORMAT_STORAGE_KEY = 'explorer:dateFormat';
+
+export function readStoredDateFormat(): DateFormatMode {
+  try {
+    const raw =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem(DATE_FORMAT_STORAGE_KEY)
+        : null;
+    return raw === 'utc' || raw === 'locale' ? raw : 'locale';
+  } catch {
+    return 'locale';
+  }
+}
+
 export const useFormatter = defineStore('formatter', {
   state: () => {
     return {
       ibcDenoms: {} as Record<string, DenomTrace>,
       ibcMetadata: {} as Record<string, Asset>,
       loading: [] as string[],
+      dateFormat: readStoredDateFormat() as DateFormatMode,
     };
   },
   getters: {
@@ -343,28 +359,50 @@ export const useFormatter = defineStore('formatter', {
     numberAndSign(input: number, fmt = '+0,0') {
       return numeral(input).format(fmt);
     },
+    setDateFormat(mode: DateFormatMode) {
+      this.dateFormat = mode === 'utc' ? 'utc' : 'locale';
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(DATE_FORMAT_STORAGE_KEY, this.dateFormat);
+        }
+      } catch {
+        // ignore storage restrictions
+      }
+    },
+    toggleDateFormat() {
+      this.setDateFormat(this.dateFormat === 'utc' ? 'locale' : 'utc');
+    },
     toLocaleDate(time?: string | number | Date) {
       if (!time) return '';
-      return new Date(time).toLocaleString(navigator.language);
+      const date = new Date(time);
+      if (Number.isNaN(date.getTime())) return '';
+      const locale =
+        typeof navigator !== 'undefined' ? navigator.language : 'en-US';
+      if (this.dateFormat === 'utc') {
+        return `${date.toLocaleString(locale, { timeZone: 'UTC' })} UTC`;
+      }
+      return date.toLocaleString(locale);
     },
     toDay(time?: string | number | Date, format = 'long') {
       if (!time) return '';
-      if (format === 'long') {
-        return dayjs(time).format('YYYY-MM-DD HH:mm');
-      }
-      if (format === 'date') {
-        return dayjs(time).format('YYYY-MM-DD');
-      }
-      if (format === 'time') {
-        return dayjs(time).format('HH:mm:ss');
-      }
       if (format === 'from') {
         return dayjs(time).fromNow();
       }
       if (format === 'to') {
         return dayjs(time).toNow();
       }
-      return dayjs(time).format('YYYY-MM-DD HH:mm:ss');
+      const d = this.dateFormat === 'utc' ? dayjs(time).utc() : dayjs(time);
+      const suffix = this.dateFormat === 'utc' ? ' UTC' : '';
+      if (format === 'long') {
+        return `${d.format('YYYY-MM-DD HH:mm')}${suffix}`;
+      }
+      if (format === 'date') {
+        return d.format('YYYY-MM-DD');
+      }
+      if (format === 'time') {
+        return `${d.format('HH:mm:ss')}${suffix}`;
+      }
+      return `${d.format('YYYY-MM-DD HH:mm:ss')}${suffix}`;
     },
     messages(msgs: { '@type'?: string; typeUrl?: string }[]) {
       if (msgs) {

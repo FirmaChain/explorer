@@ -94,6 +94,10 @@ export const DEFAULT: RequestRegistry = {
     url: '/cosmos/staking/v1beta1/validators?pagination.limit={limit}&status={status}',
     adapter,
   },
+  staking_validators_paginated: {
+    url: '/cosmos/staking/v1beta1/validators',
+    adapter,
+  },
   staking_validators_address: {
     url: '/cosmos/staking/v1beta1/validators/{validator_addr}',
     adapter,
@@ -108,6 +112,10 @@ export const DEFAULT: RequestRegistry = {
   },
   staking_validators_delegations_unbonding_delegations: {
     url: '/cosmos/staking/v1beta1/validators/{validator_addr}/delegations/{delegator_addr}/unbonding_delegation',
+    adapter,
+  },
+  staking_validators_unbonding_delegations: {
+    url: '/cosmos/staking/v1beta1/validators/{validator_addr}/unbonding_delegations',
     adapter,
   },
   base_tendermint_abci_query: {

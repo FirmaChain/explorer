@@ -74,3 +74,29 @@ export function toETHAddress(cosmosAddress: string) {
 export function addressEnCode(prefix: string, pubkey: Uint8Array) {
   return toBech32(prefix, pubkey);
 }
+
+export function normalizeConsensusHex(raw?: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (/^(0x)?[0-9a-fA-F]{40}$/.test(trimmed)) {
+    return trimmed.replace(/^0x/i, '').toUpperCase();
+  }
+  try {
+    const bytes = fromBase64(trimmed);
+    if (bytes.length === 20) {
+      return toHex(bytes).toUpperCase();
+    }
+  } catch {
+    // ignore non-base64 strings
+  }
+  try {
+    const { data } = fromBech32(trimmed);
+    if (data.length === 20) {
+      return toHex(data).toUpperCase();
+    }
+  } catch {
+    // ignore non-bech32 strings
+  }
+  return '';
+}

@@ -17,11 +17,12 @@ import {
   PageRequest,
   type Coin,
   type Delegation,
-  type PaginatedDelegations,
   type PaginatedTxs,
   type Validator,
 } from '@/types';
-import PaginationBar from '@/components/PaginationBar.vue';
+import ValidatorDelegations from '@/components/ValidatorDelegations.vue';
+import ValidatorUnbondings from '@/components/ValidatorUnbondings.vue';
+import ValidatorRedelegations from '@/components/ValidatorRedelegations.vue';
 import { fromBase64, toBase64 } from '@cosmjs/encoding';
 import { stringToUint8Array, uint8ArrayToString } from '@/libs/utils';
 
@@ -31,17 +32,17 @@ const staking = useStakingStore();
 const blockchain = useBlockchain();
 const format = useFormatter();
 const dialog = useTxDialog();
-const page = new PageRequest();
+const powerEventsPageSize = 10;
 
 const validator: string = props.validator;
 
 const v = ref({} as Validator);
+const stakingActivityTab = ref<'delegations' | 'redelegations' | 'unbonding'>('delegations');
 const cache = JSON.parse(localStorage.getItem('avatars') || '{}');
 const avatars = ref(cache || {});
 const identity = ref('');
 const rewards = ref([] as Coin[] | undefined);
 const commission = ref([] as Coin[] | undefined);
-const delegations = ref({} as PaginatedDelegations);
 const addresses = ref(
   {} as {
     account: string;
@@ -121,18 +122,20 @@ const loadAvatar = (identity: string) => {
 
 onMounted(() => {
   if (validator) {
-    staking.fetchValidator(validator).then((res) => {
-      v.value = res.validator;
-      identity.value = res.validator?.description?.identity || '';
-      if (identity.value && !avatars.value[identity.value])
-        loadAvatar(identity.value);
+    staking
+      .fetchValidator(validator)
+      .then((res) => {
+        v.value = res.validator;
+        identity.value = res.validator?.description?.identity || '';
+        if (identity.value && !avatars.value[identity.value])
+          loadAvatar(identity.value);
 
-      addresses.value.hex = consensusPubkeyToHexAddress(v.value.consensus_pubkey);
-      addresses.value.valCons = pubKeyToValcons(
-        v.value.consensus_pubkey,
-        blockchain.current?.bech32ConsensusPrefix || ''
-      );
-    });
+        addresses.value.hex = consensusPubkeyToHexAddress(v.value.consensus_pubkey);
+        addresses.value.valCons = pubKeyToValcons(
+          v.value.consensus_pubkey,
+          blockchain.current?.bech32ConsensusPrefix || ''
+        );
+      });
     blockchain.rpc.getDistributionValidatorOutstandingRewards(validator).then((res) => {
       rewards.value = res.rewards?.rewards?.sort((a, b) => Number(b.amount) - Number(a.amount));
       res.rewards?.rewards?.forEach((x) => {
@@ -150,9 +153,6 @@ onMounted(() => {
       });
     });
 
-    // Disable delegations due to its bad performance
-    // Comment out the following code if you want to enable it
-    // pageload(1)
   }
 });
 let showCopyToast = ref(0);
@@ -179,16 +179,10 @@ const tipMsg = computed(() => {
     : { class: 'success', msg: 'Copy Success!' };
 });
 
-function pageload(p: number) {
-  page.setPage(p);
-  page.limit = 10;
-
-  blockchain.rpc.getStakingValidatorsDelegations(validator, page).then((res) => {
-    delegations.value = res;
-  });
-}
-
 const events = ref({} as PaginatedTxs);
+const powerEventsPage = ref(1);
+const powerEventsLoading = ref(false);
+let powerEventsRequestId = 0;
 
 enum EventType {
   Delegate = 'delegate',
@@ -196,15 +190,56 @@ enum EventType {
 }
 
 const selectedEventType = ref(EventType.Delegate);
+const loadedEventType = ref(EventType.Delegate);
+
+const powerEventsTotal = computed(() => {
+  const res = events.value as PaginatedTxs & { total?: string };
+  const n = Number(res?.total || res?.pagination?.total || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+});
+
+const powerEventsHasNext = computed(() => {
+  if (events.value?.pagination?.next_key) return true;
+  const rows = events.value?.tx_responses?.length || 0;
+  if (rows < powerEventsPageSize) return false;
+  if (powerEventsTotal.value > 0) {
+    return powerEventsPage.value * powerEventsPageSize < powerEventsTotal.value;
+  }
+  return rows >= powerEventsPageSize;
+});
 
 function loadPowerEvents(p: number, type: EventType) {
+  const targetPage = Math.max(1, p);
+  const previousPage = powerEventsPage.value;
+  const requestId = ++powerEventsRequestId;
   selectedEventType.value = type;
-  page.setPage(p);
-  page.setPageSize(5);
-  blockchain.rpc
-    .getTxs("?order_by=2&events={type}.validator='{validator}'", { type: selectedEventType.value, validator }, page)
+  powerEventsPage.value = targetPage;
+  powerEventsLoading.value = true;
+  const page = new PageRequest();
+  page.setPageSize(powerEventsPageSize);
+  page.setPage(targetPage);
+  Promise.resolve(
+    blockchain.rpc.getTxs(
+      "?order_by=2&events={type}.validator='{validator}'",
+      { type: selectedEventType.value, validator },
+      page
+    )
+  )
     .then((res) => {
+      if (requestId !== powerEventsRequestId || !res) return;
+      loadedEventType.value = type;
       events.value = res;
+    })
+    .catch(() => {
+      // Restore page indicator if fetch fails while keeping displayed rows intact
+      if (requestId === powerEventsRequestId) {
+        powerEventsPage.value = previousPage;
+      }
+    })
+    .finally(() => {
+      if (requestId === powerEventsRequestId) {
+        powerEventsLoading.value = false;
+      }
     });
 }
 
@@ -214,42 +249,73 @@ function pagePowerEvents(page: number) {
 
 pagePowerEvents(1);
 
-function mapEvents(events: { type: string; attributes: { key: string; value: string }[] }[]) {
-  const attributes = events
-    .filter((x) => x.type === selectedEventType.value)
+function mapEvents(
+  itemEvents?: { type: string; attributes: { key: string; value: string }[] }[]
+) {
+  if (!Array.isArray(itemEvents) || !itemEvents.length) return '';
+  const validatorB64 = toBase64(stringToUint8Array(validator));
+  const attributes = itemEvents
+    .filter((x) => x.type === loadedEventType.value && Array.isArray(x.attributes))
     .filter(
       (x) =>
         x.attributes.findIndex(
-          (attr) => attr.value === validator || attr.value === toBase64(stringToUint8Array(validator))
+          (attr) => attr.value === validator || attr.value === validatorB64
         ) > -1
     )
     .map((x) => {
-      // check if attributes need to decode
       const output = {} as { [key: string]: string };
 
-      if (x.attributes.findIndex((a) => a.key === `amount`) > -1) {
+      if (x.attributes.findIndex((a) => a.key === 'amount') > -1) {
         x.attributes.forEach((attr) => {
           output[attr.key] = attr.value;
         });
       } else {
         x.attributes.forEach((attr) => {
-          output[uint8ArrayToString(fromBase64(attr.key))] = uint8ArrayToString(fromBase64(attr.value));
+          try {
+            output[uint8ArrayToString(fromBase64(attr.key))] =
+              uint8ArrayToString(fromBase64(attr.value));
+          } catch {
+            output[attr.key] = attr.value;
+          }
         });
       }
 
       return output;
     });
 
-  const coinsAsString = attributes.map((x: any) => x.amount).join(',');
-  const coins = parseCoins(coinsAsString);
+  const coinsAsString = attributes
+    .map((x) => x.amount)
+    .filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
+    .join(',');
+  if (!coinsAsString) return '';
 
-  return coins.map((coin) => format.formatToken(coin)).join(', ');
+  try {
+    const coins = parseCoins(coinsAsString).filter(
+      (coin) => coin.amount && /^\d+$/.test(coin.amount)
+    );
+    if (!coins.length) return '';
+    const formatted = coins
+      .map((coin) => format.formatToken(coin))
+      .filter((text) => Boolean(text) && /\d/.test(text));
+    return formatted.join(', ');
+  } catch {
+    return '';
+  }
 }
 
 function mapDelegators(messages: any[]) {
   if (!messages) return [];
   return Array.from(new Set(messages.map((x) => x.delegator_address || x.grantee)));
 }
+
+const powerEventRows = computed(() =>
+  (events.value?.tx_responses || [])
+    .slice(0, powerEventsPageSize)
+    .map((item) => ({
+      item,
+      amountText: mapEvents(item.events),
+    }))
+);
 </script>
 <template>
   <div>
@@ -550,34 +616,63 @@ function mapDelegators(messages: any[]) {
       </div>
     </div>
 
-    <div v-if="delegations.delegation_responses" class="mt-5 bg-base-100 shadow rounded p-4">
+    <div class="mt-5 bg-base-100 shadow rounded p-4" data-validator-staking-tabs>
       <div class="text-lg mb-4 font-semibold">
-        {{ $t('account.delegations') }}
-        <span class="float-right">
-          {{ delegations.delegation_responses?.length || 0 }} / {{ delegations.pagination?.total || 0 }}
-        </span>
+        <div class="tabs tabs-boxed bg-transparent items-center" role="tablist">
+          <span class="mr-10">Staking: </span>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="stakingActivityTab === 'delegations'"
+            class="tab text-base-content/60"
+            :class="{ 'tab-active': stakingActivityTab === 'delegations' }"
+            @click="stakingActivityTab = 'delegations'"
+          >
+            {{ $t('account.delegations') }}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="stakingActivityTab === 'redelegations'"
+            class="tab text-base-content/60"
+            :class="{ 'tab-active': stakingActivityTab === 'redelegations' }"
+            @click="stakingActivityTab = 'redelegations'"
+          >
+            Redelegations
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="stakingActivityTab === 'unbonding'"
+            class="tab text-base-content/60"
+            :class="{ 'tab-active': stakingActivityTab === 'unbonding' }"
+            @click="stakingActivityTab = 'unbonding'"
+          >
+            {{ $t('account.unbonding_delegations') }}
+          </button>
+        </div>
       </div>
-      <div class="rounded overflow-auto">
-        <table class="table validatore-table w-full">
-          <thead>
-            <th class="text-left pl-4" style="position: relative; z-index: 2">
-              {{ $t('account.delegator') }}
-            </th>
-            <th class="text-left pl-4">{{ $t('account.delegation') }}</th>
-          </thead>
-          <tbody>
-            <tr v-for="{ balance, delegation } in delegations.delegation_responses">
-              <td class="text-sm text-primary">
-                {{ delegation.delegator_address }}
-              </td>
-              <td class="truncate text-primary">
-                {{ format.formatToken(balance) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <PaginationBar :total="delegations.pagination?.total" :limit="page.limit" :callback="pageload" />
-      </div>
+
+      <ValidatorDelegations
+        v-show="stakingActivityTab === 'delegations'"
+        :validator="props.validator"
+        :chain="props.chain"
+        embedded
+      />
+
+      <ValidatorRedelegations
+        v-show="stakingActivityTab === 'redelegations'"
+        :validator="props.validator"
+        :chain="props.chain"
+        embedded
+      />
+
+      <ValidatorUnbondings
+        v-show="stakingActivityTab === 'unbonding'"
+        :validator="props.validator"
+        :chain="props.chain"
+        embedded
+      />
     </div>
 
     <div class="mt-5 bg-base-100 shadow rounded p-4">
@@ -639,7 +734,10 @@ function mapDelegators(messages: any[]) {
         </div>
       </div>
       <div class="rounded overflow-auto">
-        <table class="table validatore-table w-full">
+        <table
+          class="table validatore-table w-full transition-opacity"
+          :class="{ 'opacity-60 pointer-events-none': powerEventsLoading }"
+        >
           <thead>
             <th class="text-left pl-4">{{ $t('account.delegator') }}</th>
             <th class="text-left pl-4">{{ $t('account.amount') }}</th>
@@ -648,7 +746,7 @@ function mapDelegators(messages: any[]) {
             </th>
           </thead>
           <tbody>
-            <tr v-for="(item, i) in events.tx_responses">
+            <tr v-for="({ item, amountText }, i) in powerEventRows" :key="item.txhash || i">
               <td class="pr-2 truncate text-primary" style="max-width: 250px">
                 <RouterLink
                   v-for="d in mapDelegators(item.tx?.body?.messages)"
@@ -659,20 +757,29 @@ function mapDelegators(messages: any[]) {
               </td>
               <td>
                 <div
+                  v-if="amountText"
                   class="flex items-center"
                   :class="{
-                    'text-yes': selectedEventType === EventType.Delegate,
-                    'text-no': selectedEventType === EventType.Unbond,
+                    'text-yes': loadedEventType === EventType.Delegate,
+                    'text-no': loadedEventType === EventType.Unbond,
                   }"
                 >
                   <RouterLink :to="`/${props.chain}/tx/${item.txhash}`">
                     <span class="mr-2">
-                      {{ selectedEventType === EventType.Delegate ? '+' : '-' }} {{ mapEvents(item.events) }}</span
+                      {{ loadedEventType === EventType.Delegate ? '+' : '-' }}
+                      {{ amountText }}</span
                     >
                   </RouterLink>
                   <Icon v-if="item.code === 0" icon="mdi-check" class="text-yes" />
                   <Icon v-else icon="mdi-multiply" class="text-no" />
                 </div>
+                <RouterLink
+                  v-else
+                  class="text-base-content/50 text-xs"
+                  :to="`/${props.chain}/tx/${item.txhash}`"
+                >
+                  View Tx
+                </RouterLink>
               </td>
               <td width="150">
                 <RouterLink class="text-primary mb-0" :to="`/${props.chain}/block/${item.height}`">{{
@@ -684,8 +791,37 @@ function mapDelegators(messages: any[]) {
             </tr>
           </tbody>
         </table>
-        <PaginationBar :total="events.pagination?.total" :limit="page.limit" :callback="pagePowerEvents" />
       </div>
+      <nav
+        aria-label="Voting power event pages"
+        class="mt-4 flex flex-wrap items-center gap-3"
+        data-validator-power-events-pagination
+      >
+        <button
+          class="btn btn-sm"
+          type="button"
+          :disabled="powerEventsLoading || powerEventsPage <= 1"
+          @click="pagePowerEvents(powerEventsPage - 1)"
+        >
+          Previous
+        </button>
+        <span class="tabular-nums inline-flex items-center gap-2" aria-live="polite"
+          >Page {{ powerEventsPage
+          }}<span
+            v-if="powerEventsLoading"
+            class="loading loading-spinner loading-xs"
+            aria-hidden="true"
+          ></span
+        ></span>
+        <button
+          class="btn btn-sm power-events-primary"
+          type="button"
+          :disabled="powerEventsLoading || !powerEventsHasNext"
+          @click="pagePowerEvents(powerEventsPage + 1)"
+        >
+          Next
+        </button>
+      </nav>
     </div>
     <!-- end -->
     <div class="toast" v-show="showCopyToast === 1">
@@ -709,5 +845,12 @@ function mapDelegators(messages: any[]) {
 .validatore-table.table :where(th, td) {
   padding: 0.6rem 1rem;
   font-size: 14px;
+}
+.power-events-primary:not(:disabled) {
+  background-color: hsl(var(--bc));
+  color: hsl(var(--b1));
+}
+.power-events-primary:not(:disabled):hover {
+  background-color: hsl(var(--bc) / 0.9);
 }
 </style>

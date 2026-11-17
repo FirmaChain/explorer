@@ -37,6 +37,17 @@ export interface Attributes {
   value: string;
 }
 
+export interface TxLogEvent {
+  type: string;
+  attributes: Attributes[];
+}
+
+export interface TxLog {
+  msg_index: number;
+  log: string;
+  events: TxLogEvent[];
+}
+
 export interface TxResponse {
   height: string;
   txhash: string;
@@ -44,22 +55,13 @@ export interface TxResponse {
   code: number;
   data: string;
   raw_log: string;
-  logs: [
-    {
-      msg_index: number;
-      log: string;
-      events: Attributes[];
-    }
-  ];
-  info: '';
-  gas_wanted: '204431';
-  gas_used: '202682';
+  logs: TxLog[];
+  info: string;
+  gas_wanted: string;
+  gas_used: string;
   tx: Tx;
-  timestamp: '2022-08-13T23:24:54Z';
-  events: {
-    type: string;
-    attributes: Attributes[];
-  }[];
+  timestamp: string;
+  events: TxLogEvent[];
 }
 
 export interface PaginatedTxs extends PaginatedResponse {

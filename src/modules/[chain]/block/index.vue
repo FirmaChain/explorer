@@ -31,6 +31,27 @@ const list = computed(() => {
     </div>
 
     <div v-show="tab === 'blocks'">
+      <div
+        v-if="base.fetchAllBlocks && base.missingHeights.length > 0"
+        role="alert"
+        class="alert alert-warning text-xs py-2 mb-3"
+      >
+        <span>
+          Partial recent block window: missing height(s)
+          {{ base.missingHeights.join(', ') }}. Will retry on next poll.
+        </span>
+      </div>
+      <div
+        v-else-if="base.fetchAllBlocks && base.isContiguous"
+        role="status"
+        class="alert alert-success text-xs py-2 mb-3"
+      >
+        <span>
+          Contiguous recent block cache ({{ base.recents.length }} blocks within
+          window limit {{ base.windowLimit }}).
+        </span>
+      </div>
+
       <TxsInBlocksChart />
 
       <div class="grid xl:!grid-cols-6 md:!grid-cols-4 grid-cols-1 gap-3">

@@ -4,6 +4,12 @@ import { decodeTxRaw, type DecodedTxRaw } from '@cosmjs/proto-signing';
 import dayjs from 'dayjs';
 import type { Block } from '@/types';
 import { hashTx } from '@/libs';
+import {
+  computeBackfillHeights,
+  fetchBlocksBounded,
+  mergeRecentBlocks,
+  parseHeight,
+} from '@/libs/recentBlocks';
 import { fromBase64 } from '@cosmjs/encoding';
 
 // `"false"` is a truthy string, so compare explicitly.
@@ -13,7 +19,7 @@ type Theme = 'light' | 'dark';
 const DEFAULT_THEME: Theme = import.meta.env.VITE_DEFAULT_THEME === 'light' ? 'light' : 'dark';
 
 function initialTheme(): Theme {
-  const storedTheme = window.localStorage.getItem('theme');
+  const storedTheme = typeof window !== 'undefined' ? window.localStorage?.getItem('theme') : null;
   return storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : DEFAULT_THEME;
 }
 
@@ -23,6 +29,12 @@ export const useBaseStore = defineStore('baseStore', {
       earliest: {} as Block,
       latest: {} as Block,
       recents: [] as Block[],
+      missingHeights: [] as number[],
+      fetchAllBlocks: FETCH_ALL_BLOCKS,
+      windowLimit: RECENT_BLOCKS_LIMIT,
+      pollGeneration: 0,
+      contextKey: '',
+      lastPollError: '',
       theme: initialTheme(),
       connected: false,
     };
@@ -47,20 +59,35 @@ export const useBaseStore = defineStore('baseStore', {
     currentChainId(): string {
       return this.latest.block?.header.chain_id || '';
     },
+    isContiguous(): boolean {
+      return (
+        this.fetchAllBlocks &&
+        parseHeight(this.latest) > 0 &&
+        this.recents.length > 0 &&
+        this.missingHeights.length === 0 &&
+        !this.lastPollError
+      );
+    },
     txsInRecents() {
       const txs = [] as {
         height: string;
         hash: string;
         tx: DecodedTxRaw;
       }[];
+      const seen = new Set<string>();
       this.recents.forEach((b) =>
         b.block?.data?.txs.forEach((tx: string) => {
           if (tx) {
             const raw = fromBase64(tx);
             try {
+              const hash = hashTx(raw);
+              const height = b.block.header.height;
+              const dedupKey = `${height}:${hash}`;
+              if (seen.has(dedupKey)) return;
+              seen.add(dedupKey);
               txs.push({
-                height: b.block.header.height,
-                hash: hashTx(raw),
+                height,
+                hash,
                 tx: decodeTxRaw(raw),
               });
             } catch (e) {
@@ -81,65 +108,136 @@ export const useBaseStore = defineStore('baseStore', {
       }
       this.fetchLatest();
     },
-    async clearRecentBlocks() {
+    currentContextKey(): string {
+      return `${this.blockchain?.chainName || ''}|${this.blockchain?.endpoint?.address || ''}`;
+    },
+    resetForContext(nextKey: string) {
+      this.pollGeneration += 1;
+      this.contextKey = nextKey;
+      this.earliest = {} as Block;
+      this.latest = {} as Block;
       this.recents = [];
+      this.missingHeights = [];
+      this.lastPollError = '';
+      this.connected = false;
+    },
+    async clearRecentBlocks() {
+      this.pollGeneration += 1;
+      this.recents = [];
+      this.missingHeights = [];
     },
     async fetchLatest() {
       if (!this.hasRpc) return this.latest;
+      const nextCtx = this.currentContextKey();
+      if (this.contextKey && this.contextKey !== nextCtx) {
+        this.resetForContext(nextCtx);
+      } else if (!this.contextKey) {
+        this.contextKey = nextCtx;
+      }
+
+      const gen = this.pollGeneration;
+      let latestRes: Block;
       try {
-        const latest = await this.blockchain.rpc?.getBaseBlockLatest();
-        // A malformed 200 - an error body, a rate-limit page, a truncated
-        // response - would otherwise be stored as `latest`. The chain_id
-        // comparison below would then see undefined against the previous chain,
-        // wipe earliest/recents and reset the average block time to the 1000ms
-        // placeholder. Treat it as a failed poll instead.
-        //
-        // chain_id is checked as well as height: it is specifically the missing
-        // chain_id that trips that reset, so a partial payload carrying a height
-        // but no chain_id would otherwise still cause the state loss this guards.
-        const header = latest?.block?.header;
-        if (!header?.height || !header?.chain_id) {
+        latestRes = await this.blockchain.rpc?.getBaseBlockLatest();
+        if (gen !== this.pollGeneration || this.currentContextKey() !== nextCtx) {
+          return this.latest;
+        }
+        const header = latestRes?.block?.header;
+        if (!header?.height || !header?.chain_id || parseHeight(latestRes) <= 0) {
           throw new Error('malformed blocks/latest payload');
         }
-        this.latest = latest;
+        const prevChainId = this.latest?.block?.header?.chain_id;
+        const prevHeight = parseHeight(this.latest);
+        const nextHeight = parseHeight(latestRes);
+        if (prevChainId && prevChainId === header.chain_id && nextHeight < prevHeight) {
+          // Ignore stale/out-of-order overlapping poll response
+          return this.latest;
+        }
+        this.latest = latestRes;
         this.connected = true;
+        this.lastPollError = '';
       } catch (error) {
+        if (gen !== this.pollGeneration || this.currentContextKey() !== nextCtx) {
+          return this.latest;
+        }
         console.error('Error fetching latest block:', error);
         this.connected = false;
+        this.lastPollError =
+          error instanceof Error ? error.message : String(error);
+        return this.latest;
       }
-      if (!this.earliest || this.earliest?.block?.header?.chain_id != this.latest?.block?.header?.chain_id) {
-        //reset earliest and recents
+
+      if (
+        !this.earliest?.block?.header?.chain_id ||
+        this.earliest?.block?.header?.chain_id !== this.latest?.block?.header?.chain_id
+      ) {
         this.earliest = this.latest;
         this.recents = [];
+        this.missingHeights = [];
       }
-      //check if the block exists in recents
-      if (this.recents.findIndex((x) => x?.block_id?.hash === this.latest?.block_id?.hash) === -1) {
-        const newBlocks = await this.fetchNewBlocks();
-        const combined = [...this.recents, ...newBlocks];
-        this.recents = combined.slice(-RECENT_BLOCKS_LIMIT);
+
+      const latestHeight = parseHeight(this.latest);
+      const chainId = this.latest.block.header.chain_id;
+
+      if (!this.fetchAllBlocks) {
+        if (
+          this.recents.findIndex(
+            (x) => x?.block_id?.hash === this.latest?.block_id?.hash
+          ) === -1
+        ) {
+          const combined = [...this.recents, this.latest];
+          this.recents = combined.slice(-this.windowLimit);
+        }
+        return this.latest;
       }
+
+      const newBlocks = await this.fetchNewBlocks(gen, nextCtx);
+      if (gen !== this.pollGeneration || this.currentContextKey() !== nextCtx) {
+        return this.latest;
+      }
+      const merged = mergeRecentBlocks(
+        this.recents,
+        [...newBlocks, this.latest],
+        this.windowLimit,
+        latestHeight,
+        chainId
+      );
+      if (merged.conflicts.length > 0) {
+        this.lastPollError = `Block hash or chain conflict at height(s): ${merged.conflicts.join(', ')}`;
+      }
+      this.recents = merged.blocks;
+      this.missingHeights = merged.missingHeights;
       return this.latest;
     },
-    /**
-     * Fetches all blocks since the last block in recents.
-     * Only fetches blocks with height greater than this.recents[-1].block.header.height.
-     * Returns an array of new blocks to be added to recents.
-     */
-    async fetchNewBlocks() {
-      if (!this.latest?.block?.header?.height) return [];
-      if (!FETCH_ALL_BLOCKS) return [this.latest];
-      const oldHeight = Number(this.recents[this.recents.length - 1]?.block?.header?.height);
-      const newHeight = Number(this.latest.block.header.height);
-      let newBlocks = [];
-      // Fetch all blocks between oldHeight+1 and less than newHeight
-      for (let h = oldHeight + 1; h < newHeight; h++) {
-        const block = await this.fetchBlock(h);
-        if (!block?.block?.header?.height) continue; // skip if block not found
-        newBlocks.push(block);
-      }
-      // Add the latest block
-      newBlocks.push(this.latest);
-      return newBlocks;
+    async fetchNewBlocks(expectedGen?: number, expectedCtx?: string) {
+      const gen = expectedGen ?? this.pollGeneration;
+      const ctx = expectedCtx ?? this.currentContextKey();
+      const latestHeight = parseHeight(this.latest);
+      if (!latestHeight) return [];
+      if (!this.fetchAllBlocks) return [this.latest];
+
+      const chainId = this.latest.block.header.chain_id;
+      const toFetch = computeBackfillHeights(
+        latestHeight,
+        this.windowLimit,
+        this.recents,
+        this.missingHeights
+      );
+      if (!toFetch.length) return [];
+
+      const { blocks } = await fetchBlocksBounded(
+        toFetch,
+        (h) => this.blockchain.rpc.getBaseBlockAt(String(h)),
+        chainId,
+        {
+          concurrency: 4,
+          timeoutMs: 8000,
+          isCancelled: () =>
+            gen !== this.pollGeneration ||
+            this.currentContextKey() !== ctx,
+        }
+      );
+      return blocks;
     },
     async fetchValidatorByHeight(height?: number, offset = 0) {
       return this.blockchain.rpc.getBaseValidatorsetAt(String(height), offset);

@@ -4,6 +4,10 @@ import type { PageRequest, PaginatedProposals } from '@/types';
 import { LoadingStatus } from './useDashboard';
 import { useWalletStore } from './useWalletStore';
 import { reactive } from 'vue';
+import {
+  applyProposalExclusionPolicy,
+  type ExclusionPolicyConfig,
+} from '@/libs/govHelpers';
 
 export const useGovStore = defineStore('govStore', {
   state: () => {
@@ -15,6 +19,8 @@ export const useGovStore = defineStore('govStore', {
       },
       proposals: {} as Record<string, PaginatedProposals>,
       loading: {} as Record<string, LoadingStatus>,
+      exclusionPolicy: { mode: 'airdrop_title' } as ExclusionPolicyConfig,
+      excludedCountByStatus: {} as Record<string, number>,
     };
   },
   getters: {
@@ -36,12 +42,16 @@ export const useGovStore = defineStore('govStore', {
       this.loading[status] = LoadingStatus.Loading;
       const proposals = reactive(await this.blockchain.rpc?.getGovProposals(status, pagination));
 
-      //filter spam proposals
+      // Apply configured exclusion policy (default preserves existing airdrop title filter)
       if (proposals?.proposals) {
-        proposals.proposals = proposals.proposals.filter((item) => {
-          const title = item.title || '';
-          return title.toLowerCase().indexOf('airdrop') === -1;
-        });
+        const applied = applyProposalExclusionPolicy(
+          proposals.proposals,
+          this.exclusionPolicy
+        );
+        proposals.proposals = applied.proposals;
+        this.excludedCountByStatus[status] = applied.excludedCount;
+      } else {
+        this.excludedCountByStatus[status] = 0;
       }
 
       if (status === '2') {
@@ -84,8 +94,8 @@ export const useGovStore = defineStore('govStore', {
     async fetchProposal(proposalId: string) {
       return this.blockchain.rpc.getGovProposal(proposalId);
     },
-    async fetchProposalDeposits(proposalId: string) {
-      return this.blockchain.rpc.getGovProposalDeposits(proposalId);
+    async fetchProposalDeposits(proposalId: string, page?: PageRequest) {
+      return this.blockchain.rpc.getGovProposalDeposits(proposalId, page);
     },
     async fetchProposalVotes(proposalId: string, page?: PageRequest) {
       return this.blockchain.rpc.getGovProposalVotes(proposalId, page);

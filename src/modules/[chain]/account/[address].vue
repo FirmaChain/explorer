@@ -9,6 +9,7 @@ import { Icon } from '@iconify/vue';
 import type { AuthAccount, Delegation, TxResponse, DelegatorRewards, UnbondingResponses } from '@/types';
 import type { Coin } from '@cosmjs/amino';
 import Countdown from '@/components/Countdown.vue';
+import AccountRedelegations from '@/components/AccountRedelegations.vue';
 import { fromBase64 } from '@cosmjs/encoding';
 import { useQRCode } from '@vueuse/integrations/useQRCode';
 import { isOfacSanctionedEvm } from '@/libs/ofac';
@@ -34,6 +35,7 @@ const publicKeyCopied = ref(false);
 const copiedTxHash = ref('');
 const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const ofacSanctioned = ref(false);
+const redelegationsRefresh = ref(0);
 const chart = {};
 onMounted(() => {
   loadAccount(props.address);
@@ -126,6 +128,7 @@ function loadAccount(address: string) {
 
 function updateEvent() {
   loadAccount(props.address);
+  redelegationsRefresh.value += 1;
 }
 
 async function copyAddress() {
@@ -510,6 +513,12 @@ function mapAmount(events: { type: string; attributes: { key: string; value: str
         </table>
       </div>
     </div>
+
+    <AccountRedelegations
+      :address="props.address"
+      :chain="props.chain"
+      :refresh-key="redelegationsRefresh"
+    />
 
     <!-- Transactions -->
     <div class="bg-base-100 px-4 pt-3 pb-4 rounded mb-4 shadow">

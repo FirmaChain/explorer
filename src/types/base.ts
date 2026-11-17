@@ -1,4 +1,4 @@
-import type { Key } from './common';
+import type { Key, Pagination } from './common';
 
 export interface NodeInfo {
   default_node_info: {
@@ -99,4 +99,5 @@ export interface TendermintValidator {
 export interface PaginatedTendermintValidator {
   validators: TendermintValidator[];
   block_height: string;
+  pagination?: Pagination;
 }

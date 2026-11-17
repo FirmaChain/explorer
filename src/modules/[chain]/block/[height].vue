@@ -9,6 +9,7 @@ import { onBeforeRouteUpdate } from 'vue-router';
 import { useBaseStore, useFormatter } from '@/stores';
 import type { Block } from '@/types';
 import Countdown from '@/components/Countdown.vue';
+import BlockSignatures from '@/components/BlockSignatures.vue';
 
 const props = defineProps(['height', 'chain']);
 
@@ -171,9 +172,16 @@ onBeforeRouteUpdate(async (to, from, next) => {
         <TxsElement :value="current.block?.data?.txs" />
       </div>
 
+      <BlockSignatures
+        v-if="height > 0"
+        :height="height"
+        :chain="props.chain"
+        :latest-height="store.latest?.block?.header?.height"
+      />
+
       <div class="bg-base-100 px-4 pt-3 pb-4 rounded shadow">
         <h2 class="card-title flex flex-row justify-between">
-          {{ $t('block.last_commit') }}
+          {{ $t('block.last_commit') }} (commits block #{{ Math.max(0, height - 1) }})
         </h2>
         <DynamicComponent :value="current.block?.last_commit" />
       </div>

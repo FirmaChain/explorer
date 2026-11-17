@@ -13,6 +13,10 @@ import CardStatisticsVertical from '@/components/CardStatisticsVertical.vue';
 import ProposalListItem from '@/components/ProposalListItem.vue';
 import ArrayObjectElement from '@/components/dynamic/ArrayObjectElement.vue';
 import Loading from '@/components/Loading.vue';
+import DashboardConsensus from '@/components/DashboardConsensus.vue';
+import DashboardVotingPower from '@/components/DashboardVotingPower.vue';
+import DashboardTokenDistribution from '@/components/DashboardTokenDistribution.vue';
+import DashboardRecentBlocks from '@/components/DashboardRecentBlocks.vue';
 
 const props = defineProps(['chain']);
 
@@ -330,6 +334,11 @@ const amount = computed({
         <CardStatisticsVertical v-bind="item" />
       </div>
     </div>
+
+    <DashboardConsensus :chain="props.chain" />
+    <DashboardVotingPower :chain="props.chain" />
+    <DashboardTokenDistribution :chain="props.chain" />
+    <DashboardRecentBlocks :chain="props.chain" />
 
     <div
       v-if="blockchain.supportModule('governance')"

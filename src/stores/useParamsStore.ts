@@ -48,6 +48,9 @@ export const useParamStore = defineStore('paramstore', {
       title: 'Mint Parameters',
       items: [] as Array<any>,
     },
+    mintStatus: 'idle' as 'idle' | 'loading' | 'loaded' | 'unsupported' | 'empty' | 'error',
+    mintError: '',
+    mintGeneration: 0,
     staking: {
       title: 'Staking Parameters',
       items: [] as Array<any>,
@@ -81,7 +84,7 @@ export const useParamStore = defineStore('paramstore', {
   actions: {
     initial() {
       this.handleBaseBlockLatest();
-      // this.handleMintParam()
+      this.handleMintParam();
       this.handleStakingParams();
       this.handleSlashingParams();
       this.handleDistributionParams();
@@ -127,16 +130,40 @@ export const useParamStore = defineStore('paramstore', {
         this.chain.items[bondedRatio].value = `${percent(Number(pool.bonded_tokens) / Number(amount))}%`;
       });
     },
+    resetMintParam() {
+      this.mintGeneration += 1;
+      this.mint.items = [];
+      this.mintError = '';
+      this.mintStatus = 'idle';
+    },
     async handleMintParam() {
+      const requestId = ++this.mintGeneration;
+      this.mint.items = [];
+      this.mintError = '';
       const excludes = this.blockchain.current?.excludes;
       if (excludes && excludes.indexOf('mint') > -1) {
+        this.mintStatus = 'unsupported';
         return;
       }
-      // this.getMintingInflation().then(res => {
-      //     const chainIndex = this.chain.items.findIndex(x => x.subtitle === 'inflation')
-      //     this.chain.items[chainIndex].value = `${percent(res)}%`
-      // })
-      const res = await this.getMintParam();
+      this.mintStatus = 'loading';
+      try {
+        const res = await this.getMintParam();
+        if (requestId !== this.mintGeneration) return;
+        const params = res?.params;
+        if (!params || typeof params !== 'object' || Object.keys(params).length === 0) {
+          this.mintStatus = 'empty';
+          return;
+        }
+        this.mint.items = Object.entries(params).map(([key, value]) => ({
+          subtitle: key,
+          value,
+        }));
+        this.mintStatus = 'loaded';
+      } catch (cause) {
+        if (requestId !== this.mintGeneration) return;
+        this.mintError = cause instanceof Error ? cause.message : String(cause);
+        this.mintStatus = 'error';
+      }
     },
     async handleSlashingParams() {
       const res = await this.getSlashingParams();

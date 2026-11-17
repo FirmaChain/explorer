@@ -3,11 +3,18 @@ import { computed } from '@vue/reactivity';
 import MdEditor from 'md-editor-v3';
 import ObjectElement from '@/components/dynamic/ObjectElement.vue';
 import { useBaseStore, useBlockchain, useFormatter, useGovStore, useStakingStore, useTxDialog } from '@/stores';
-import { PageRequest, type GovProposal, type GovVote, type PaginatedProposalDeposit, type Pagination } from '@/types';
+import type { GovProposal } from '@/types';
 import { ref, reactive } from 'vue';
 import Countdown from '@/components/Countdown.vue';
-import PaginationBar from '@/components/PaginationBar.vue';
-import { fromBech32, toHex } from '@cosmjs/encoding';
+import ProposalDeposits from '@/components/ProposalDeposits.vue';
+import ProposalVotes from '@/components/ProposalVotes.vue';
+import ProposalNonVoters from '@/components/ProposalNonVoters.vue';
+import { resolveRpcEndpoint } from '@/libs/abci';
+import {
+  computeProposalTurnout,
+  queryStakingPoolAtHeight,
+  type TurnoutSnapshotResult,
+} from '@/libs/govHelpers';
 
 const props = defineProps(['proposal_id', 'chain']);
 const proposal = ref({} as GovProposal);
@@ -17,13 +24,69 @@ const dialog = useTxDialog();
 const stakingStore = useStakingStore();
 const chainStore = useBlockchain();
 
+const turnoutSnapshot = ref<TurnoutSnapshotResult | null>(null);
+
+async function refreshTurnoutSnapshot(p: GovProposal) {
+  const isVoting = p.status === 'PROPOSAL_STATUS_VOTING_PERIOD';
+  if (isVoting) {
+    const bonded = stakingStore.pool?.bonded_tokens;
+    const h = useBaseStore().latest?.block?.header?.height || '';
+    turnoutSnapshot.value = computeProposalTurnout(
+      p.final_tally_result,
+      bonded,
+      { height: h, isLiveEstimate: true }
+    );
+    return;
+  }
+  const rpc = resolveRpcEndpoint(chainStore.current);
+  if (!rpc) {
+    turnoutSnapshot.value = computeProposalTurnout(
+      p.final_tally_result,
+      undefined,
+      {
+        isLiveEstimate: false,
+        snapshotUnavailableReason:
+          'Historical proposal staking pool snapshot is unavailable without archive RPC height proof.',
+      }
+    );
+    return;
+  }
+  try {
+    // Check if historical pool query at a snapshot height is available
+    const poolRes = await queryStakingPoolAtHeight(rpc, 1);
+    turnoutSnapshot.value = computeProposalTurnout(
+      p.final_tally_result,
+      undefined,
+      {
+        height: poolRes.height,
+        isLiveEstimate: false,
+        snapshotUnavailableReason:
+          'Exact per-proposal snapshot height is not provided in node REST/ABCI state; refusing to substitute current live pool.',
+      }
+    );
+  } catch {
+    turnoutSnapshot.value = computeProposalTurnout(
+      p.final_tally_result,
+      undefined,
+      {
+        isLiveEstimate: false,
+        snapshotUnavailableReason:
+          'Historical staking pool snapshot unavailable on this node.',
+      }
+    );
+  }
+}
+
 store.fetchProposal(props.proposal_id).then((res) => {
   let proposalDetail = reactive(res.proposal);
   // when status under the voting, final_tally_result are no data, should request fetchTally
   if (res.proposal?.status === 'PROPOSAL_STATUS_VOTING_PERIOD') {
     store.fetchTally(props.proposal_id).then((tallRes) => {
       proposalDetail.final_tally_result = tallRes?.tally;
+      void refreshTurnoutSnapshot(proposalDetail);
     });
+  } else {
+    void refreshTurnoutSnapshot(proposalDetail);
   }
   proposal.value = proposalDetail;
   // load origin params if the proposal is param change
@@ -84,17 +147,7 @@ const status = computed(() => {
   return '';
 });
 
-const deposit = ref({} as PaginatedProposalDeposit);
-store.fetchProposalDeposits(props.proposal_id).then((x) => (deposit.value = x));
-
-const votes = ref({} as GovVote[]);
-const pageRequest = ref(new PageRequest());
-const pageResponse = ref({} as Pagination);
-
-store.fetchProposalVotes(props.proposal_id).then((x) => {
-  votes.value = x.votes;
-  pageResponse.value = x.pagination;
-});
+// Turnout uses verified snapshot/live-estimate helper rather than raw live pool fallback
 
 function shortTime(v: string) {
   if (v) {
@@ -136,11 +189,10 @@ const total = computed(() => {
 });
 
 const turnout = computed(() => {
-  if (total.value > 0) {
-    const bonded = stakingStore.pool?.bonded_tokens || '1';
-    return format.percent(total.value / Number(bonded));
+  if (turnoutSnapshot.value?.available) {
+    return turnoutSnapshot.value.percent;
   }
-  return 0;
+  return 'Unavailable';
 });
 
 const yes = computed(() => {
@@ -183,25 +235,6 @@ const processList = computed(() => {
     { name: 'Abstain', value: abstain.value, class: 'bg-warning' },
   ];
 });
-
-function showValidatorName(voter: string) {
-  try {
-    const { data } = fromBech32(voter);
-    const hex = toHex(data);
-    const v = stakingStore.validators.find((x) => toHex(fromBech32(x.operator_address).data) === hex);
-    return v ? v.description.moniker : voter;
-  } catch (e) {
-    return voter;
-  }
-}
-
-function pageload(p: number) {
-  pageRequest.value.setPage(p);
-  store.fetchProposalVotes(props.proposal_id, pageRequest.value).then((x) => {
-    votes.value = x.votes;
-    pageResponse.value = x.pagination;
-  });
-}
 
 function metaItem(metadata: string | undefined): { title: string; summary: string } {
   if (!metadata) {
@@ -266,6 +299,20 @@ function metaItem(metadata: string | undefined): { title: string; summary: strin
             </p>
           </div>
         </div>
+        <p
+          v-if="turnoutSnapshot"
+          class="text-xs text-base-content/70 mt-2"
+          data-proposal-turnout-note
+        >
+          <template v-if="turnoutSnapshot.available">
+            Turnout is a live estimate using current bonded pool{{
+              turnoutSnapshot.height ? ` at height #${turnoutSnapshot.height}` : ''
+            }}.
+          </template>
+          <template v-else>
+            Turnout unavailable: {{ turnoutSnapshot.reason }}
+          </template>
+        </p>
         <div class="mt-6 grid grid-cols-2">
           <label
             for="vote"
@@ -368,35 +415,22 @@ function metaItem(metadata: string | undefined): { title: string; summary: strin
       </div>
     </div>
 
-    <div class="bg-base-100 px-4 pt-3 pb-4 rounded mb-4 shadow">
-      <h2 class="card-title">{{ $t('gov.votes') }}</h2>
-      <div class="overflow-x-auto">
-        <table class="table w-full table-zebra">
-          <tbody>
-            <tr v-for="(item, index) of votes" :key="index">
-              <td class="py-2 text-sm">{{ showValidatorName(item.voter) }}</td>
-              <td
-                v-if="item.option && item.option !== 'VOTE_OPTION_UNSPECIFIED'"
-                class="py-2 text-sm"
-                :class="{
-                  'text-yes': item.option === 'VOTE_OPTION_YES',
-                  'text-base-content/60': item.option === 'VOTE_OPTION_ABSTAIN',
-                }"
-              >
-                {{ String(item.option).replace('VOTE_OPTION_', '') }}
-              </td>
-              <td v-if="item.options" class="py-2 text-sm">
-                {{
-                  item.options
-                    .map((x) => `${x.option.replace('VOTE_OPTION_', '')}:${format.percent(x.weight)}`)
-                    .join(', ')
-                }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <PaginationBar :limit="pageRequest.limit" :total="pageResponse.total" :callback="pageload" />
-      </div>
-    </div>
+    <ProposalDeposits
+      :proposal-id="String(props.proposal_id)"
+      :chain="String(props.chain)"
+      :proposal-status="proposal.status"
+    />
+
+    <ProposalVotes
+      :proposal-id="String(props.proposal_id)"
+      :chain="String(props.chain)"
+      :proposal-status="proposal.status"
+    />
+
+    <ProposalNonVoters
+      :proposal-id="String(props.proposal_id)"
+      :chain="String(props.chain)"
+      :proposal-status="proposal.status"
+    />
   </div>
 </template>

@@ -2,6 +2,7 @@
 import { nextTick, onScopeDispose, ref, watch } from 'vue';
 import {
   computeOnlineVotingPower,
+  type CachedValidatorSet,
   type OnlineVotingPowerResult,
 } from '@/libs/dashboardMetrics';
 import { useBaseStore, useBlockchain, useStakingStore } from '@/stores';
@@ -14,6 +15,7 @@ const stakingStore = useStakingStore();
 
 const loading = ref(false);
 const result = ref<OnlineVotingPowerResult | null>(null);
+const validatorSetCache: { current: CachedValidatorSet | null } = { current: null };
 let generation = 0;
 let lastContextKey = '';
 
@@ -49,7 +51,8 @@ async function refresh(showInitialLoading: boolean) {
     const computedPower = await computeOnlineVotingPower(
       blockchain.rpc,
       baseStore.latest,
-      stakingStore.validators
+      stakingStore.validators,
+      { cache: validatorSetCache }
     );
     if (req !== generation) return;
     result.value = computedPower;
@@ -84,6 +87,7 @@ watch(
 
     const reset = ++generation;
     if (contextChanged) {
+      validatorSetCache.current = null;
       result.value = null;
       loading.value = true;
     }

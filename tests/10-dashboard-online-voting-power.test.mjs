@@ -100,13 +100,13 @@ test('computes commit-signed online voting power across paginated validator set 
   assert.match(text(mounted.container), /70 \/ 100/);
   assert.match(text(mounted.container), /1 \/ 2/);
 
-  // Updating block commit height on the SAME chain & endpoint must NOT flash Loading state
-  let resolveNextBlock;
+  // Updating block commit height with the same validators (< 60s TTL) reuses cache with 0 RPC calls
+  let valsetCalls = 0;
   const origGet = blockchain.rpc.getBaseValidatorsetAt;
-  blockchain.rpc.getBaseValidatorsetAt = () =>
-    new Promise((resolve) => {
-      resolveNextBlock = resolve;
-    });
+  blockchain.rpc.getBaseValidatorsetAt = () => {
+    valsetCalls += 1;
+    return origGet();
+  };
   baseStore.latest = {
     block: {
       header: { height: '502', chain_id: 'firmachain-1' },
@@ -119,15 +119,45 @@ test('computes commit-signed online voting power across paginated validator set 
       },
     },
   };
-  await nextTick();
-  await nextTick();
-  assert.doesNotMatch(text(mounted.container), /Loading online voting power/);
-  assert.match(text(mounted.container), /70\.00%/);
-  resolveNextBlock({ block_height: '501', validators: [v1.tm, v2.tm], pagination: {} });
   await new Promise((r) => setTimeout(r, 20));
   await nextTick();
+  assert.equal(valsetCalls, 0);
+  assert.doesNotMatch(text(mounted.container), /Loading online voting power/);
   assert.match(text(mounted.container), /100\.00%/);
   assert.match(text(mounted.container), /height #501/);
+
+  // When a new validator appears in signatures, re-fetches immediately without flashing Loading state
+  const v3 = makeVal(3, 50);
+  let resolveNextBlock;
+  blockchain.rpc.getBaseValidatorsetAt = () => {
+    valsetCalls += 1;
+    return new Promise((resolve) => {
+      resolveNextBlock = resolve;
+    });
+  };
+  baseStore.latest = {
+    block: {
+      header: { height: '503', chain_id: 'firmachain-1' },
+      last_commit: {
+        height: '502',
+        signatures: [
+          { block_id_flag: 'BLOCK_ID_FLAG_COMMIT', validator_address: v1.b64 },
+          { block_id_flag: 'BLOCK_ID_FLAG_COMMIT', validator_address: v2.b64 },
+          { block_id_flag: 'BLOCK_ID_FLAG_COMMIT', validator_address: v3.b64 },
+        ],
+      },
+    },
+  };
+  await nextTick();
+  await nextTick();
+  assert.equal(valsetCalls, 1);
+  assert.doesNotMatch(text(mounted.container), /Loading online voting power/);
+  assert.match(text(mounted.container), /100\.00%/);
+  resolveNextBlock({ block_height: '502', validators: [v1.tm, v2.tm, v3.tm], pagination: {} });
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+  assert.match(text(mounted.container), /3 \/ 3/);
+  assert.match(text(mounted.container), /height #502/);
   blockchain.rpc.getBaseValidatorsetAt = origGet;
 
   mode = 'partial';
@@ -141,4 +171,109 @@ test('computes commit-signed online voting power across paginated validator set 
   await new Promise((r) => setTimeout(r, 20));
   await nextTick();
   assert.match(text(mounted.container), /Online voting power unavailable/);
+});
+
+test('reuses cached validator set across blocks within 60s and invalidates on TTL expiry or new signer', async () => {
+  const v1 = makeVal(1, 60);
+  const v2 = makeVal(2, 40);
+  const v3 = makeVal(3, 50);
+
+  const addresses = await loadProduct('src/libs/address.ts');
+  const types = await loadProduct('src/types/common.ts');
+  const concentration = await loadProduct('src/libs/stakingConcentration.ts', {
+    '@/libs/address': addresses,
+    '@/types': types,
+  });
+  const blockSigs = await loadProduct('src/libs/blockSignatures.ts', {
+    '@/libs/address': addresses,
+    '@/libs/stakingConcentration': concentration,
+    '@/types': types,
+  });
+  const metrics = await loadProduct('src/libs/dashboardMetrics.ts', {
+    'cross-fetch': fetch,
+    '@/libs/address': addresses,
+    '@/libs/blockSignatures': blockSigs,
+    '@/libs/stakingConcentration': concentration,
+    '@/types': types,
+  });
+
+  let currentTime = 1_000_000;
+  let activeSet = [v1.tm, v2.tm];
+  let calls = 0;
+  const rpc = {
+    getBaseValidatorsetAt: async (h) => {
+      calls += 1;
+      return { block_height: String(h), validators: activeSet, pagination: {} };
+    },
+  };
+  const cache = { current: null };
+  const opts = { cache, ttlMs: 60_000, now: () => currentTime };
+
+  const r1 = await metrics.computeOnlineVotingPower(
+    rpc,
+    {
+      block: {
+        header: { height: '101' },
+        last_commit: {
+          height: '100',
+          signatures: [
+            { block_id_flag: 'BLOCK_ID_FLAG_COMMIT', validator_address: v1.b64 },
+            { block_id_flag: 'BLOCK_ID_FLAG_COMMIT', validator_address: v2.b64 },
+          ],
+        },
+      },
+    },
+    [],
+    opts
+  );
+  assert.equal(calls, 1);
+  assert.equal(r1.signedPercent, '100.00%');
+
+  // 30s later, validator 2 goes absent -> recomputes immediately without RPC call
+  currentTime += 30_000;
+  const r2 = await metrics.computeOnlineVotingPower(
+    rpc,
+    {
+      block: {
+        header: { height: '102' },
+        last_commit: {
+          height: '101',
+          signatures: [
+            { block_id_flag: 'BLOCK_ID_FLAG_COMMIT', validator_address: v1.b64 },
+            { block_id_flag: 'BLOCK_ID_FLAG_ABSENT', validator_address: '' },
+          ],
+        },
+      },
+    },
+    [],
+    opts
+  );
+  assert.equal(calls, 1);
+  assert.equal(r2.signedPercent, '60.00%');
+  assert.equal(r2.signedValidators, 1);
+  assert.equal(r2.totalValidators, 2);
+
+  // 60s expires -> refreshes validator set via RPC
+  currentTime += 30_000;
+  activeSet = [v1.tm, v2.tm, v3.tm];
+  const r3 = await metrics.computeOnlineVotingPower(
+    rpc,
+    {
+      block: {
+        header: { height: '103' },
+        last_commit: {
+          height: '102',
+          signatures: [
+            { block_id_flag: 'BLOCK_ID_FLAG_COMMIT', validator_address: v1.b64 },
+            { block_id_flag: 'BLOCK_ID_FLAG_COMMIT', validator_address: v2.b64 },
+          ],
+        },
+      },
+    },
+    [],
+    opts
+  );
+  assert.equal(calls, 2);
+  assert.equal(r3.signedPower, 100n);
+  assert.equal(r3.totalPower, 150n);
 });

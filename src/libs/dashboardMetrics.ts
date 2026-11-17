@@ -4,8 +4,11 @@ import {
   buildBlockSignatures,
   fetchValidatorSetAtHeight,
 } from '@/libs/blockSignatures';
-import { parseBigIntToken } from '@/libs/stakingConcentration';
-import type { Block, Validator } from '@/types';
+import {
+  consensusHexOfTendermintValidator,
+  parseBigIntToken,
+} from '@/libs/stakingConcentration';
+import type { Block, TendermintValidator, Validator } from '@/types';
 
 export interface ConsensusSnapshot {
   available: boolean;
@@ -104,6 +107,91 @@ export interface OnlineVotingPowerResult {
   reason: string;
 }
 
+export const VALIDATOR_SET_CACHE_TTL_MS = 60_000;
+
+export interface CachedValidatorSet {
+  validators: TendermintValidator[];
+  hexSet: Set<string>;
+  fetchedAt: number;
+}
+
+export function createCachedValidatorSet(
+  validators: TendermintValidator[],
+  fetchedAt: number
+): CachedValidatorSet {
+  const hexSet = new Set<string>();
+  for (const tv of validators) {
+    const hex = consensusHexOfTendermintValidator(tv);
+    if (hex) hexSet.add(hex);
+  }
+  return { validators, hexSet, fetchedAt };
+}
+
+export function canReuseCachedValidatorSet(
+  cached: CachedValidatorSet | null | undefined,
+  latestBlock: Block | undefined,
+  nowMs: number,
+  ttlMs = VALIDATOR_SET_CACHE_TTL_MS
+): boolean {
+  if (!cached || !cached.validators.length) return false;
+  if (nowMs - cached.fetchedAt >= ttlMs) return false;
+
+  const sigs = latestBlock?.block?.last_commit?.signatures;
+  if (!Array.isArray(sigs) || sigs.length !== cached.validators.length) {
+    return false;
+  }
+
+  for (const sig of sigs) {
+    if (!sig?.validator_address) continue;
+    const hex = normalizeConsensusHex(sig.validator_address);
+    if (!hex || !cached.hexSet.has(hex)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function buildOnlineVotingPowerResult(
+  commitHeight: number,
+  latestBlock: Block,
+  validators: TendermintValidator[],
+  stakingValidators: Validator[],
+  complete: boolean
+): OnlineVotingPowerResult {
+  const summary = buildBlockSignatures(
+    commitHeight,
+    latestBlock,
+    validators,
+    stakingValidators,
+    complete
+  );
+
+  if (!summary.powerAvailable || summary.totalPower <= 0n) {
+    return {
+      available: false,
+      height: String(commitHeight),
+      signedPower: 0n,
+      totalPower: summary.totalPower,
+      signedPercent: '-',
+      signedValidators: summary.signedCount,
+      totalValidators: validators.length,
+      reason: 'Could not verify complete consensus voting power at commit height.',
+    };
+  }
+
+  const bp = Number((summary.signedPower * 10000n) / summary.totalPower);
+  return {
+    available: true,
+    height: String(commitHeight),
+    signedPower: summary.signedPower,
+    totalPower: summary.totalPower,
+    signedPercent: `${(bp / 100).toFixed(2)}%`,
+    signedValidators: summary.signedCount,
+    totalValidators: validators.length,
+    reason: '',
+  };
+}
+
 export async function computeOnlineVotingPower(
   rpc: {
     getBaseValidatorsetAt: (
@@ -113,7 +201,12 @@ export async function computeOnlineVotingPower(
     ) => Promise<any>;
   },
   latestBlock: Block | undefined,
-  stakingValidators: Validator[]
+  stakingValidators: Validator[],
+  options?: {
+    cache?: { current: CachedValidatorSet | null };
+    ttlMs?: number;
+    now?: () => number;
+  }
 ): Promise<OnlineVotingPowerResult> {
   const commitHeightStr = latestBlock?.block?.last_commit?.height;
   const commitHeight = Number(commitHeightStr || 0);
@@ -130,6 +223,25 @@ export async function computeOnlineVotingPower(
     };
   }
 
+  const nowFn = options?.now ?? (() => Date.now());
+  const ttlMs = options?.ttlMs ?? VALIDATOR_SET_CACHE_TTL_MS;
+
+  if (
+    options?.cache &&
+    canReuseCachedValidatorSet(options.cache.current, latestBlock, nowFn(), ttlMs)
+  ) {
+    const cachedResult = buildOnlineVotingPowerResult(
+      commitHeight,
+      latestBlock!,
+      options.cache.current!.validators,
+      stakingValidators,
+      true
+    );
+    if (cachedResult.available) {
+      return cachedResult;
+    }
+  }
+
   const valSet = await fetchValidatorSetAtHeight(rpc, commitHeight);
   if (!valSet.complete) {
     return {
@@ -144,38 +256,17 @@ export async function computeOnlineVotingPower(
     };
   }
 
-  const summary = buildBlockSignatures(
+  const result = buildOnlineVotingPowerResult(
     commitHeight,
     latestBlock!,
     valSet.validators,
     stakingValidators,
     valSet.complete
   );
-
-  if (!summary.powerAvailable || summary.totalPower <= 0n) {
-    return {
-      available: false,
-      height: String(commitHeight),
-      signedPower: 0n,
-      totalPower: summary.totalPower,
-      signedPercent: '-',
-      signedValidators: summary.signedCount,
-      totalValidators: valSet.validators.length,
-      reason: 'Could not verify complete consensus voting power at commit height.',
-    };
+  if (options?.cache && result.available) {
+    options.cache.current = createCachedValidatorSet(valSet.validators, nowFn());
   }
-
-  const bp = Number((summary.signedPower * 10000n) / summary.totalPower);
-  return {
-    available: true,
-    height: String(commitHeight),
-    signedPower: summary.signedPower,
-    totalPower: summary.totalPower,
-    signedPercent: `${(bp / 100).toFixed(2)}%`,
-    signedValidators: summary.signedCount,
-    totalValidators: valSet.validators.length,
-    reason: '',
-  };
+  return result;
 }
 
 export interface TokenDistributionResult {

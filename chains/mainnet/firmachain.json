@@ -4,10 +4,10 @@
   "display_name": "FIRMACHAIN",
   "network_type": "mainnet",
   "api": [
-    { "address": "https://explorer-mainnet-demo.firmachain.dev/api", "provider": "FIRMACHAIN" }
+    { "address": "https://mainnet-api.firmachain.dev", "provider": "FIRMACHAIN" }
   ],
   "rpc": [
-    { "address": "https://explorer-mainnet-demo.firmachain.dev/rpc", "provider": "FIRMACHAIN" }
+    { "address": "https://mainnet-rpc.firmachain.dev", "provider": "FIRMACHAIN" }
   ],
   "sdk_version": "0.50.15",
   "coin_type": "7777777",

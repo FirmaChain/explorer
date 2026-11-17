@@ -4,10 +4,10 @@
   "display_name": "FIRMACHAIN",
   "network_type": "testnet",
   "api": [
-    { "address": "https://explorer-testnet-demo.firmachain.dev/api", "provider": "FIRMACHAIN" }
+    { "address": "https://testnet-api.firmachain.dev", "provider": "FIRMACHAIN" }
   ],
   "rpc": [
-    { "address": "https://explorer-testnet-demo.firmachain.dev/rpc", "provider": "FIRMACHAIN" }
+    { "address": "https://testnet-rpc.firmachain.dev", "provider": "FIRMACHAIN" }
   ],
   "sdk_version": "0.50.15",
   "coin_type": "7777777",

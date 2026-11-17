@@ -21,7 +21,8 @@ function changeEndpoint(item: Endpoint) {
           class="w-2 h-2 rounded-full absolute right-0 bottom-0 shadow"
           :class="{
             'bg-success': baseStore.connected,
-            'bg-error': !baseStore.connected,
+            'bg-error': baseStore.connectionChecked && !baseStore.connected,
+            'bg-gray-400': !baseStore.connectionChecked,
           }"
         ></div>
       </div>
@@ -35,7 +36,8 @@ function changeEndpoint(item: Endpoint) {
               ? `#${baseStore.latest.block.header.height}`
               : chainStore.chainName || ''
           }}
-          <span class="text-error">{{ baseStore.connected ? '' : 'disconnected' }}</span>
+          <span v-if="!baseStore.connectionChecked" class="text-base-content/60">Connecting...</span>
+          <span v-else-if="!baseStore.connected" class="text-error">Disconnected</span>
         </div>
         <div class="text-xs text-base-content/70 whitespace-nowrap hidden md:!block">
           {{ chainStore.connErr || chainStore.endpoint.address }}

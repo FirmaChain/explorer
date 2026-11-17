@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { watch } from 'vue';
 import { useBlockchain } from '@/stores';
 import { decodeTxRaw, type DecodedTxRaw } from '@cosmjs/proto-signing';
 import dayjs from 'dayjs';
@@ -37,6 +38,7 @@ export const useBaseStore = defineStore('baseStore', {
       lastPollError: '',
       theme: initialTheme(),
       connected: false,
+      connectionChecked: false,
     };
   },
   getters: {
@@ -103,10 +105,21 @@ export const useBaseStore = defineStore('baseStore', {
   },
   actions: {
     async initial() {
-      while (!this.hasRpc) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!this.hasRpc) {
+        await new Promise<void>((resolve) => {
+          const stop = watch(
+            () => this.hasRpc,
+            (ready) => {
+              if (ready) {
+                stop();
+                resolve();
+              }
+            },
+            { flush: 'sync' }
+          );
+        });
       }
-      this.fetchLatest();
+      await this.fetchLatest();
     },
     currentContextKey(): string {
       return `${this.blockchain?.chainName || ''}|${this.blockchain?.endpoint?.address || ''}`;
@@ -120,6 +133,7 @@ export const useBaseStore = defineStore('baseStore', {
       this.missingHeights = [];
       this.lastPollError = '';
       this.connected = false;
+      this.connectionChecked = false;
     },
     async clearRecentBlocks() {
       this.pollGeneration += 1;
@@ -155,6 +169,7 @@ export const useBaseStore = defineStore('baseStore', {
         }
         this.latest = latestRes;
         this.connected = true;
+        this.connectionChecked = true;
         this.lastPollError = '';
       } catch (error) {
         if (gen !== this.pollGeneration || this.currentContextKey() !== nextCtx) {
@@ -162,6 +177,7 @@ export const useBaseStore = defineStore('baseStore', {
         }
         console.error('Error fetching latest block:', error);
         this.connected = false;
+        this.connectionChecked = true;
         this.lastPollError =
           error instanceof Error ? error.message : String(error);
         return this.latest;
@@ -249,10 +265,12 @@ export const useBaseStore = defineStore('baseStore', {
       try {
         const block = await this.blockchain.rpc.getBaseBlockAt(String(height));
         this.connected = true;
+        this.connectionChecked = true;
         return block;
       } catch (error) {
         console.error('Error fetching latest block:', error);
         this.connected = false;
+        this.connectionChecked = true;
       }
       return {} as Block;
     },

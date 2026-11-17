@@ -28,6 +28,7 @@ async function createConsensusFixture(t, handler, options = {}) {
   });
 
   const addresses = await loadProduct('src/libs/address.ts');
+  const validatorAvatar = await loadProduct('src/libs/validatorAvatar.ts');
   const types = await loadProduct('src/types/common.ts');
   const concentration = await loadProduct('src/libs/stakingConcentration.ts', {
     '@/libs/address': addresses,
@@ -63,10 +64,14 @@ async function createConsensusFixture(t, handler, options = {}) {
     useStakingStore: () => ({
       validators: [
         {
-          description: { moniker: 'Proposer-Val' },
+          operator_address: 'firmavaloper1proposer',
+          description: { moniker: 'Proposer-Val', identity: 'PROP123' },
           consensus_pubkey: { '@type': '/cosmos.crypto.ed25519.PubKey', key: toBase64(pub) },
         },
       ],
+      keybase: async () => ({
+        them: [{ pictures: { primary: { url: 'https://img.example/proposer.png' } } }],
+      }),
     }),
   };
 
@@ -76,6 +81,7 @@ async function createConsensusFixture(t, handler, options = {}) {
       '@/libs': addresses,
       '@/libs/abci': abci,
       '@/libs/dashboardMetrics': metrics,
+      '@/libs/validatorAvatar': validatorAvatar,
     })
   ).default;
 
@@ -124,14 +130,36 @@ test('polls consensus_state, renders height/round/step/proposer, recovers from f
   click(button(f.container, 'Retry'));
   await new Promise((r) => setTimeout(r, 40));
   await nextTick();
-  assert.match(text(f.container), /Height150Round1Step3ProposerProposer-Val/);
+  assert.match(text(f.container), /Height150ProposerProposer-Val.*Step 3Propose/);
+  assert.doesNotMatch(text(f.container), /Round 1/);
   assert.match(text(f.container), /events between polls are not captured/);
+  assert.equal(
+    findAll(
+      f.container,
+      (el) => el.type === 'a' && el.props.href === '/firmachain/staking/firmavaloper1proposer'
+    ).length,
+    1
+  );
+  assert.equal(
+    findAll(
+      f.container,
+      (el) => el.type === 'svg' && el.props['aria-label'] === 'Step 3 (Propose), Round 1'
+    ).length,
+    1
+  );
+  assert.equal(
+    findAll(
+      f.container,
+      (el) => el.type === 'img' && el.props.src === 'https://img.example/proposer.png'
+    ).length,
+    1
+  );
 
   // Switch RPC endpoint -> clears old state and loads new endpoint height 200
   f.blockchain.current.endpoints.rpc = [{ address: `${f.endpoint}/rpc-b` }];
   await new Promise((r) => setTimeout(r, 40));
   await nextTick();
-  assert.match(text(f.container), /Height200Round1Step3/);
+  assert.match(text(f.container), /Height200ProposerProposer-Val.*Step 3Propose/);
   assert.equal(findAll(f.container, (el) => el.props.role === 'alert').length, 0);
 });
 
@@ -217,7 +245,7 @@ test('continues periodic polling automatically with error backoff and adaptive b
   sendRoundState(await nextRequest(f, 0), '101');
   await new Promise((r) => setTimeout(r, 10));
   await nextTick();
-  assert.match(text(f.container), /Height101Round0Step1/);
+  assert.match(text(f.container), /Height101.*Step 1NewHeight/);
   assert.equal(scheduledDelays[0], 3000);
 
   // 2nd poll -> 503 error (schedules 6000ms backoff)
@@ -233,7 +261,7 @@ test('continues periodic polling automatically with error backoff and adaptive b
   sendRoundState(await nextRequest(f, 2), '103');
   await new Promise((r) => setTimeout(r, 10));
   await nextTick();
-  assert.match(text(f.container), /Height103Round0Step1/);
+  assert.match(text(f.container), /Height103.*Step 1NewHeight/);
   assert.equal(scheduledDelays[2], 3000);
 });
 
@@ -260,7 +288,7 @@ test('pauses polling when document is hidden, resumes immediately when visible, 
   await new Promise((r) => setTimeout(r, 15));
   await nextTick();
   assert.equal(doc.listenerCount('visibilitychange'), 1);
-  assert.match(text(f.container), /Height301Round0Step2/);
+  assert.match(text(f.container), /Height301.*Step 2NewRound/);
 
   // Hide tab -> stops polling
   doc.hidden = true;
@@ -276,9 +304,65 @@ test('pauses polling when document is hidden, resumes immediately when visible, 
   await new Promise((r) => setTimeout(r, 15));
   await nextTick();
   assert.ok(f.requests.length > countWhenHidden);
-  assert.match(text(f.container), /Height302Round0Step2/);
+  assert.match(text(f.container), /Height302.*Step 2NewRound/);
 
   // Unmount removes visibilitychange listener
   f.app.unmount();
   assert.equal(doc.listenerCount('visibilitychange'), 0);
+});
+
+test('wraps radial ring through 100% -> 0% -> target when consensus step value decreases', async (t) => {
+  installFastPollTimerMock(t);
+  const f = await createConsensusFixture(t, null, { blocktime: 6000 });
+
+  function getProgressCircle() {
+    const circles = findAll(f.container, (el) => el.type === 'circle');
+    return circles[1];
+  }
+
+  // 1st poll -> Step 6 (75%)
+  const req1 = await nextRequest(f, 0);
+  req1.res.writeHead(200, { 'content-type': 'application/json' });
+  req1.res.end(
+    JSON.stringify({
+      result: {
+        round_state: {
+          'height/round/step': '400/0/6',
+          proposer: { address: proposerHex },
+        },
+      },
+    })
+  );
+  await new Promise((r) => setTimeout(r, 15));
+  await nextTick();
+  const c1 = getProgressCircle();
+  const circumference = c1.props['stroke-dasharray'];
+  assert.ok(Math.abs(c1.props['stroke-dashoffset'] - circumference * 0.25) < 0.01);
+
+  // 2nd poll -> Step 1 (12.5% < 75%) -> immediately fills to 100% (dashoffset = 0)
+  const req2 = await nextRequest(f, 1);
+  req2.res.writeHead(200, { 'content-type': 'application/json' });
+  req2.res.end(
+    JSON.stringify({
+      result: {
+        round_state: {
+          'height/round/step': '401/0/1',
+          proposer: { address: proposerHex },
+        },
+      },
+    })
+  );
+  await new Promise((r) => setTimeout(r, 10));
+  await nextTick();
+  const cFill = getProgressCircle();
+  assert.equal(cFill.props['stroke-dashoffset'], 0);
+  assert.notEqual(cFill.props.style.transition, 'none');
+
+  // After WRAP_FILL_MS (220ms) + WRAP_RESET_MS (24ms), settles at Step 1 (12.5%)
+  await new Promise((r) => setTimeout(r, 270));
+  await nextTick();
+  const cTarget = getProgressCircle();
+  assert.ok(Math.abs(cTarget.props['stroke-dashoffset'] - circumference * 0.875) < 0.01);
+  assert.equal(cTarget.props['stroke-opacity'], 1);
+  assert.notEqual(cTarget.props.style.transition, 'none');
 });

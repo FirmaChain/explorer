@@ -17,7 +17,62 @@ export interface ConsensusSnapshot {
   step: string;
   proposerHex: string;
   proposerMoniker: string;
+  proposerOperatorAddress: string;
+  proposerIdentity: string;
   error: string;
+}
+
+const CONSENSUS_STEP_NAMES: Record<number, string> = {
+  1: 'NewHeight',
+  2: 'NewRound',
+  3: 'Propose',
+  4: 'Prevote',
+  5: 'PrevoteWait',
+  6: 'Precommit',
+  7: 'PrecommitWait',
+  8: 'Commit',
+};
+
+const CONSENSUS_NAMED_STEPS: Record<string, number> = {
+  RoundStepNewHeight: 1,
+  RoundStepNewRound: 2,
+  RoundStepPropose: 3,
+  RoundStepPrevote: 4,
+  RoundStepPrevoteWait: 5,
+  RoundStepPrecommit: 6,
+  RoundStepPrecommitWait: 7,
+  RoundStepCommit: 8,
+};
+
+export function consensusStepInfo(stepRaw?: string): {
+  stepNumber: number;
+  name: string;
+  percent: number;
+} {
+  const trimmed = String(stepRaw ?? '').trim();
+  if (!trimmed) return { stepNumber: 0, name: '', percent: 0 };
+  const numeric = /^\d+$/.test(trimmed)
+    ? Number(trimmed)
+    : CONSENSUS_NAMED_STEPS[trimmed] ?? 0;
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return { stepNumber: 0, name: '', percent: 0 };
+  }
+  const clamped = Math.min(8, Math.max(0, numeric));
+  return {
+    stepNumber: numeric,
+    name: CONSENSUS_STEP_NAMES[numeric] || '',
+    percent: (clamped / 8) * 100,
+  };
+}
+
+export function formatBigIntInteger(value: bigint): string {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+
+export function computeBigIntRatioPercent(part: bigint, total: bigint): number {
+  if (total <= 0n || part <= 0n) return 0;
+  const bp = Number((part * 10000n) / total);
+  return Math.min(100, Math.max(0, bp / 100));
 }
 
 export function parseHeightRoundStep(raw?: string): {
@@ -46,6 +101,8 @@ export async function fetchConsensusSnapshot(
       step: '',
       proposerHex: '',
       proposerMoniker: '',
+      proposerOperatorAddress: '',
+      proposerIdentity: '',
       error: 'No RPC endpoint is configured for this chain.',
     };
   }
@@ -92,6 +149,8 @@ export async function fetchConsensusSnapshot(
     step: hrs.step,
     proposerHex,
     proposerMoniker: matched?.description?.moniker || '',
+    proposerOperatorAddress: matched?.operator_address || '',
+    proposerIdentity: matched?.description?.identity || '',
     error: '',
   };
 }

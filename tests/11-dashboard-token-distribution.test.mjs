@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createPinia, defineStore, setActivePinia } from 'pinia';
 import { nextTick, reactive } from 'vue';
 import { loadProduct, mount } from './helpers/validator-renderer.mjs';
-import { text } from './helpers/validator-renderer.mjs';
+import { findAll, text } from './helpers/validator-renderer.mjs';
 
 test('computes BigInt token distribution and rejects zero denominator, negative residual, and partial failures', async (t) => {
   const addresses = await loadProduct('src/libs/address.ts');
@@ -86,6 +86,13 @@ test('computes BigInt token distribution and rejects zero denominator, negative 
   assert.match(text(mounted.container), /Bonded \(60\.00%\).*600 FCT/);
   assert.match(text(mounted.container), /Unbonding \/ Not Bonded \(10\.00%\).*100 FCT/);
   assert.match(text(mounted.container), /Liquid \/ Other \(30\.00%\).*300 FCT/);
+  assert.match(text(mounted.container), /Total Supply1,000 FCT/);
+  const charts = findAll(
+    mounted.container,
+    (el) => el.type === 'svg' && el.props['aria-label'] === 'Token distribution chart'
+  );
+  assert.equal(charts.length, 1);
+  assert.equal(charts[0].children.filter((c) => c.type === 'path').length, 4);
 
   failPool = true;
   blockchain.endpoint = { address: 'https://node-b.example' };

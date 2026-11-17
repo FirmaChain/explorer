@@ -369,9 +369,17 @@ const amount = computed({
       </div>
     </div>
 
-    <DashboardConsensus :chain="props.chain" />
-    <DashboardVotingPower :chain="props.chain" />
-    <DashboardTokenDistribution :chain="props.chain" />
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 items-stretch">
+      <div class="md:col-span-2 lg:col-span-1">
+        <DashboardVotingPower :chain="props.chain" />
+      </div>
+      <div>
+        <DashboardTokenDistribution :chain="props.chain" />
+      </div>
+      <div>
+        <DashboardConsensus :chain="props.chain" />
+      </div>
+    </div>
     <DashboardRecentBlocks :chain="props.chain" />
 
     <div

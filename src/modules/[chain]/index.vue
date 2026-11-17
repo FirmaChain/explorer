@@ -31,9 +31,6 @@ const govStore = useGovStore();
 const coinInfo = computed(() => {
   return store.coinInfo;
 });
-const isAppVersionLoading = computed(
-  () => !Array.isArray(paramStore.appVersion?.items) || paramStore.appVersion.items.length === 0
-);
 const isNodeVersionLoading = computed(
   () => !Array.isArray(paramStore.nodeVersion?.items) || paramStore.nodeVersion.items.length === 0
 );
@@ -486,20 +483,6 @@ const amount = computed({
           :hd-path="walletStore?.connectedWallet?.hdPath"
         ></ping-token-convert>
       </Teleport>
-    </div>
-
-    <div class="bg-base-100 rounded mt-4">
-      <div class="px-4 pt-4 pb-2 text-lg font-semibold text-main">
-        {{ $t('index.app_versions') }}
-      </div>
-      <!-- Application Version -->
-      <Loading v-if="isAppVersionLoading" :bordered="false" />
-      <ArrayObjectElement
-        v-else
-        :value="paramStore.appVersion?.items"
-        :thead="false"
-      />
-      <div class="h-4"></div>
     </div>
 
     <div v-if="!store.coingeckoId" class="bg-base-100 rounded mt-4">

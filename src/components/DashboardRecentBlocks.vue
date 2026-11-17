@@ -1,13 +1,68 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { Icon } from '@iconify/vue';
+import { consensusPubkeyToHexAddress, normalizeConsensusHex } from '@/libs/address';
 import { selectRecentDashboardBlocks } from '@/libs/dashboardMetrics';
-import { useBaseStore, useBlockchain, useFormatter } from '@/stores';
+import { useBaseStore, useBlockchain, useFormatter, useStakingStore } from '@/stores';
+import type { Validator } from '@/types';
 
 const props = defineProps<{ chain: string }>();
 
 const baseStore = useBaseStore();
 const blockchain = useBlockchain();
 const format = useFormatter();
+const stakingStore = useStakingStore();
+
+function readCachedAvatars(): Record<string, string> {
+  try {
+    if (typeof localStorage === 'undefined') return {};
+    return JSON.parse(localStorage.getItem('avatars') || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+
+const avatars = ref<Record<string, string>>(readCachedAvatars());
+const loadingIdentities = new Set<string>();
+
+function logoUrl(identity?: string): string {
+  if (!identity || !avatars.value[identity]) return '';
+  const url = avatars.value[identity];
+  return url.startsWith('http')
+    ? url
+    : `https://s3.amazonaws.com/keybase_processed_uploads/${url}`;
+}
+
+function loadAvatar(identity?: string) {
+  if (
+    !identity ||
+    avatars.value[identity] ||
+    loadingIdentities.has(identity) ||
+    typeof stakingStore.keybase !== 'function'
+  ) {
+    return;
+  }
+  loadingIdentities.add(identity);
+  Promise.resolve(stakingStore.keybase(identity))
+    .then((d) => {
+      const url = d?.them?.[0]?.pictures?.primary?.url;
+      if (!url) return;
+      const uri = String(url).replace(
+        'https://s3.amazonaws.com/keybase_processed_uploads/',
+        ''
+      );
+      avatars.value = { ...avatars.value, [identity]: uri };
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('avatars', JSON.stringify(avatars.value));
+      }
+    })
+    .catch(() => {
+      // Fallback icon remains rendered when Keybase lookup fails
+    })
+    .finally(() => {
+      loadingIdentities.delete(identity);
+    });
+}
 
 const chainMatched = computed(
   () => !blockchain.chainName || blockchain.chainName === props.chain
@@ -21,6 +76,35 @@ const recentBlocks = computed(() => {
     7
   );
 });
+
+const validatorsByHex = computed(() => {
+  const map = new Map<string, Validator>();
+  for (const v of stakingStore.validators || []) {
+    const hex = normalizeConsensusHex(
+      consensusPubkeyToHexAddress(v.consensus_pubkey)
+    );
+    if (hex) map.set(hex, v);
+  }
+  return map;
+});
+
+function proposerValidator(proposerAddress?: string): Validator | undefined {
+  const hex = normalizeConsensusHex(proposerAddress);
+  if (!hex) return undefined;
+  return validatorsByHex.value.get(hex);
+}
+
+watch(
+  [recentBlocks, validatorsByHex],
+  ([blocks]) => {
+    for (const block of blocks) {
+      const identity = proposerValidator(block.block?.header?.proposer_address)
+        ?.description?.identity;
+      if (identity) loadAvatar(identity);
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -81,8 +165,39 @@ const recentBlocks = computed(() => {
                 {{ item.block.header.height }}
               </RouterLink>
             </td>
-            <td class="truncate max-w-[200px]">
-              {{ format.validator(item.block?.header?.proposer_address) || '-' }}
+            <td class="max-w-[220px]">
+              <RouterLink
+                v-if="proposerValidator(item.block?.header?.proposer_address)"
+                class="inline-flex items-center gap-2 text-primary hover:underline underline-offset-4 max-w-full"
+                :to="`/${chain}/staking/${proposerValidator(item.block?.header?.proposer_address)!.operator_address}`"
+              >
+                <span
+                  class="avatar w-6 h-6 rounded-full shrink-0 overflow-hidden bg-base-200 flex items-center justify-center"
+                >
+                  <img
+                    v-if="logoUrl(proposerValidator(item.block?.header?.proposer_address)?.description?.identity)"
+                    :src="logoUrl(proposerValidator(item.block?.header?.proposer_address)?.description?.identity)"
+                    :alt="proposerValidator(item.block?.header?.proposer_address)?.description?.moniker || 'Validator'"
+                    class="w-6 h-6 object-cover rounded-full"
+                  />
+                  <Icon
+                    v-else
+                    icon="mdi-help-circle-outline"
+                    class="w-5 h-5 text-base-content/60"
+                  />
+                </span>
+                <span class="truncate">
+                  {{
+                    proposerValidator(item.block?.header?.proposer_address)
+                      ?.description?.moniker ||
+                    proposerValidator(item.block?.header?.proposer_address)!
+                      .operator_address
+                  }}
+                </span>
+              </RouterLink>
+              <span v-else class="truncate block">
+                {{ format.validator(item.block?.header?.proposer_address) || '-' }}
+              </span>
             </td>
             <td class="tabular-nums">
               {{ item.block?.data?.txs?.length || 0 }}

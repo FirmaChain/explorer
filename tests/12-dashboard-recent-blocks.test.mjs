@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createPinia, defineStore, setActivePinia } from 'pinia';
-import { nextTick, reactive } from 'vue';
+import { h, nextTick, reactive } from 'vue';
+import { sha256 } from '@cosmjs/crypto';
+import { toBase64 } from '@cosmjs/encoding';
 import { loadProduct, mount } from './helpers/validator-renderer.mjs';
 import { findAll, rows, text } from './helpers/validator-renderer.mjs';
 
-function block(h, chain_id = 'firmachain-1') {
+function block(h, chain_id = 'firmachain-1', proposer_address = '') {
   return {
     block_id: { hash: `H-${h}` },
     block: {
@@ -13,7 +15,7 @@ function block(h, chain_id = 'firmachain-1') {
         chain_id,
         height: String(h),
         time: `2026-11-17T00:00:${String(h % 60).padStart(2, '0')}Z`,
-        proposer_address: '',
+        proposer_address,
       },
       data: { txs: [] },
     },
@@ -40,6 +42,17 @@ test('shows up to 7 latest unique blocks, handles empty/error/chain-switch, and 
     '@/types': types,
   });
 
+  const pub = Buffer.alloc(32, 7);
+  const proposerB64 = toBase64(sha256(pub).slice(0, 20));
+  const validator = {
+    operator_address: 'firmavaloper1proposer',
+    description: { moniker: 'Alpha Validator', identity: 'ABC123' },
+    consensus_pubkey: {
+      '@type': '/cosmos.crypto.ed25519.PubKey',
+      key: toBase64(pub),
+    },
+  };
+
   const baseStore = reactive({
     recents: [
       block(1),
@@ -50,7 +63,7 @@ test('shows up to 7 latest unique blocks, handles empty/error/chain-switch, and 
       block(7),
       block(8),
       block(9),
-      block(10),
+      block(10, 'firmachain-1', proposerB64),
     ],
     currentChainId: 'firmachain-1',
     isContiguous: false,
@@ -65,7 +78,12 @@ test('shows up to 7 latest unique blocks, handles empty/error/chain-switch, and 
   const stores = {
     useBaseStore: () => baseStore,
     useBlockchain: () => blockchain,
-    useStakingStore: () => ({ validators: [] }),
+    useStakingStore: () => ({
+      validators: [validator],
+      keybase: async () => ({
+        them: [{ pictures: { primary: { url: 'https://img.example/avatar.png' } } }],
+      }),
+    }),
     useBankStore: () => ({}),
     useDashboard: () => ({ chains: {}, coingecko: {}, prices: {} }),
   };
@@ -80,6 +98,10 @@ test('shows up to 7 latest unique blocks, handles empty/error/chain-switch, and 
     await loadProduct('src/components/DashboardRecentBlocks.vue', {
       '@/stores': stores,
       '@/libs/dashboardMetrics': metrics,
+      '@/libs/address': addresses,
+      '@iconify/vue': {
+        Icon: (p) => h('span', { 'data-icon': p.icon }),
+      },
     })
   ).default;
 
@@ -88,8 +110,29 @@ test('shows up to 7 latest unique blocks, handles empty/error/chain-switch, and 
   t.after(() => mounted.app.unmount());
 
   assert.equal(rows(mounted.container).length, 7);
-  assert.match(rows(mounted.container)[0], /^10-/);
+  assert.match(rows(mounted.container)[0], /^10Alpha Validator/);
   assert.match(rows(mounted.container)[6], /^2-/);
+  assert.equal(
+    findAll(
+      mounted.container,
+      (el) => el.type === 'a' && el.props.href === '/firmachain/staking/firmavaloper1proposer'
+    ).length,
+    1
+  );
+  // Fallback icon rendered before keybase resolves, then avatar image after keybase lookup
+  assert.equal(
+    findAll(mounted.container, (el) => el.props['data-icon'] === 'mdi-help-circle-outline').length,
+    1
+  );
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+  assert.equal(
+    findAll(
+      mounted.container,
+      (el) => el.type === 'img' && el.props.src === 'https://img.example/avatar.png'
+    ).length,
+    1
+  );
   assert.match(text(mounted.container), /continuity not guaranteed/);
   assert.equal(
     findAll(mounted.container, (el) => el.type === 'a' && el.props.href === '/firmachain/block').length,

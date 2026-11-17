@@ -4,7 +4,7 @@ import { createServer } from 'vite';
 import { nextTick, reactive } from 'vue';
 import { toBech32 } from '@cosmjs/encoding';
 import { loadProduct, mount, root } from './helpers/validator-renderer.mjs';
-import { button, click, rows, text } from './helpers/validator-renderer.mjs';
+import { button, click, findAll, rows, text } from './helpers/validator-renderer.mjs';
 
 test('collects multi-page votes without proposal_status bug, filters weighted voters accurately across options, and resets on proposal switch', async (t) => {
   const addresses = await loadProduct('src/libs/address.ts');
@@ -149,10 +149,23 @@ test('collects multi-page votes without proposal_status bug, filters weighted vo
   assert.equal(rows(mounted.container).length, 1);
   assert.match(rows(mounted.container)[0], new RegExp(voter3));
 
+  // Filter Veto has 0 matches, but filter button group remains visible because allVotes > 0
+  click(button(mounted.container, 'Veto'));
+  await nextTick();
+  assert.equal(rows(mounted.container).length, 0);
+  assert.equal(
+    findAll(mounted.container, (el) => el.props?.role === 'group').length,
+    1
+  );
+
   // Switch to closed proposal with empty votes
   props.proposalId = '13';
   props.proposalStatus = 'PROPOSAL_STATUS_PASSED';
   await new Promise((r) => setTimeout(r, 20));
   await nextTick();
   assert.match(text(mounted.container), /No current vote records returned.*closed proposal/);
+  assert.equal(
+    findAll(mounted.container, (el) => el.props?.role === 'group').length,
+    0
+  );
 });

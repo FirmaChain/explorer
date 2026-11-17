@@ -201,6 +201,7 @@ onScopeDispose(() => {
       </template>
     </div>
     <nav
+      v-if="!loading && !error && (rows.length > 0 || current > 0)"
       aria-label="Proposal deposit pages"
       class="mt-3 flex flex-wrap items-center gap-3"
     >

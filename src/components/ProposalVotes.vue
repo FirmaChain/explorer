@@ -153,7 +153,12 @@ onScopeDispose(() => {
       <h2 id="proposal-votes-heading" class="card-title">
         {{ $t('gov.votes') }} ({{ filteredVotes.length }})
       </h2>
-      <div class="btn-group" role="group" aria-label="Filter votes by option">
+      <div
+        v-if="allVotes.length > 0"
+        class="btn-group"
+        role="group"
+        aria-label="Filter votes by option"
+      >
         <button
           v-for="opt in [
             ['ALL', 'All'],

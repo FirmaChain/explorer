@@ -121,11 +121,7 @@ const show_ad = computed(() => {
             <Icon
               v-if="item?.icon?.icon"
               :icon="item?.icon?.icon"
-              class="text-xl mr-2"
-              :class="{
-                'text-warning': item?.title === 'Favorite',
-                'text-blue-500': item?.title !== 'Favorite',
-              }"
+              class="text-xl mr-2 text-blue-500"
             />
             <img v-if="item?.icon?.image" :src="item?.icon?.image" class="w-6 h-6 rounded-full mr-3" />
             <div class="text-base capitalize flex-1 text-base-content whitespace-nowrap">
@@ -155,7 +151,7 @@ const show_ad = computed(() => {
                   icon="mdi:chevron-right"
                   class="mr-2 ml-3"
                   :class="{
-                    'text-white': $route.path === el?.to?.path && item?.title !== 'Favorite',
+                    'text-white': $route.path === el?.to?.path,
                   }"
                 />
                 <img
@@ -172,7 +168,7 @@ const show_ad = computed(() => {
                     '!text-white': selected($route, el),
                   }"
                 >
-                  {{ item?.title === 'Favorite' ? el?.title : $t(el?.title) }}
+                  {{ $t(el?.title) }}
                 </div>
               </RouterLink>
             </div>
@@ -201,11 +197,7 @@ const show_ad = computed(() => {
           <Icon
             v-if="item?.icon?.icon"
             :icon="item?.icon?.icon"
-            class="text-xl mr-2"
-            :class="{
-              'text-warning': item?.title === 'Favorite',
-              'text-blue-500': item?.title !== 'Favorite',
-            }"
+            class="text-xl mr-2 text-blue-500"
           />
           <img
             v-if="item?.icon?.image"

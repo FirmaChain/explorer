@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { watch } from 'vue';
 import { useBlockchain } from '@/stores';
 import { decodeTxRaw, type DecodedTxRaw } from '@cosmjs/proto-signing';
 import dayjs from 'dayjs';
@@ -104,10 +105,21 @@ export const useBaseStore = defineStore('baseStore', {
   },
   actions: {
     async initial() {
-      while (!this.hasRpc) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!this.hasRpc) {
+        await new Promise<void>((resolve) => {
+          const stop = watch(
+            () => this.hasRpc,
+            (ready) => {
+              if (ready) {
+                stop();
+                resolve();
+              }
+            },
+            { flush: 'sync' }
+          );
+        });
       }
-      this.fetchLatest();
+      await this.fetchLatest();
     },
     currentContextKey(): string {
       return `${this.blockchain?.chainName || ''}|${this.blockchain?.endpoint?.address || ''}`;

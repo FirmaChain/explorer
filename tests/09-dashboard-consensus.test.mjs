@@ -66,11 +66,18 @@ async function createConsensusFixture(t, handler, options = {}) {
         {
           operator_address: 'firmavaloper1proposer',
           description: { moniker: 'Proposer-Val', identity: 'PROP123' },
-          consensus_pubkey: { '@type': '/cosmos.crypto.ed25519.PubKey', key: toBase64(pub) },
+          consensus_pubkey: {
+            '@type': '/cosmos.crypto.ed25519.PubKey',
+            key: toBase64(pub),
+          },
         },
       ],
       keybase: async () => ({
-        them: [{ pictures: { primary: { url: 'https://img.example/proposer.png' } } }],
+        them: [
+          {
+            pictures: { primary: { url: 'https://img.example/proposer.png' } },
+          },
+        ],
       }),
     }),
   };
@@ -97,7 +104,15 @@ async function createConsensusFixture(t, handler, options = {}) {
     });
   }
 
-  return { ...mounted, props, blockchain, baseStore, endpoint, requests, arrivals };
+  return {
+    ...mounted,
+    props,
+    blockchain,
+    baseStore,
+    endpoint,
+    requests,
+    arrivals,
+  };
 }
 
 test('polls consensus_state, renders height/round/step/proposer, recovers from failure, and discards stale chain state', async (t) => {
@@ -130,27 +145,35 @@ test('polls consensus_state, renders height/round/step/proposer, recovers from f
   click(button(f.container, 'Retry'));
   await new Promise((r) => setTimeout(r, 40));
   await nextTick();
-  assert.match(text(f.container), /Height150ProposerProposer-Val.*Step 3Propose/);
+  assert.match(
+    text(f.container),
+    /Height150ProposerProposer-Val.*Step 3Propose/
+  );
   assert.doesNotMatch(text(f.container), /Round 1/);
   assert.match(text(f.container), /events between polls are not captured/);
   assert.equal(
     findAll(
       f.container,
-      (el) => el.type === 'a' && el.props.href === '/firmachain/staking/firmavaloper1proposer'
+      (el) =>
+        el.type === 'a' &&
+        el.props.href === '/firmachain/staking/firmavaloper1proposer'
     ).length,
     1
   );
   assert.equal(
     findAll(
       f.container,
-      (el) => el.type === 'svg' && el.props['aria-label'] === 'Step 3 (Propose), Round 1'
+      (el) =>
+        el.type === 'svg' &&
+        el.props['aria-label'] === 'Step 3 (Propose), Round 1'
     ).length,
     1
   );
   assert.equal(
     findAll(
       f.container,
-      (el) => el.type === 'img' && el.props.src === 'https://img.example/proposer.png'
+      (el) =>
+        el.type === 'img' && el.props.src === 'https://img.example/proposer.png'
     ).length,
     1
   );
@@ -159,8 +182,14 @@ test('polls consensus_state, renders height/round/step/proposer, recovers from f
   f.blockchain.current.endpoints.rpc = [{ address: `${f.endpoint}/rpc-b` }];
   await new Promise((r) => setTimeout(r, 40));
   await nextTick();
-  assert.match(text(f.container), /Height200ProposerProposer-Val.*Step 3Propose/);
-  assert.equal(findAll(f.container, (el) => el.props.role === 'alert').length, 0);
+  assert.match(
+    text(f.container),
+    /Height200ProposerProposer-Val.*Step 3Propose/
+  );
+  assert.equal(
+    findAll(f.container, (el) => el.props.role === 'alert').length,
+    0
+  );
 });
 
 function installFastPollTimerMock(t) {
@@ -337,7 +366,9 @@ test('wraps radial ring through 100% -> 0% -> target when consensus step value d
   await nextTick();
   const c1 = getProgressCircle();
   const circumference = c1.props['stroke-dasharray'];
-  assert.ok(Math.abs(c1.props['stroke-dashoffset'] - circumference * 0.25) < 0.01);
+  assert.ok(
+    Math.abs(c1.props['stroke-dashoffset'] - circumference * 0.25) < 0.01
+  );
 
   // 2nd poll -> Step 1 (12.5% < 75%) -> immediately fills to 100% (dashoffset = 0)
   const req2 = await nextRequest(f, 1);
@@ -362,7 +393,81 @@ test('wraps radial ring through 100% -> 0% -> target when consensus step value d
   await new Promise((r) => setTimeout(r, 270));
   await nextTick();
   const cTarget = getProgressCircle();
-  assert.ok(Math.abs(cTarget.props['stroke-dashoffset'] - circumference * 0.875) < 0.01);
+  assert.ok(
+    Math.abs(cTarget.props['stroke-dashoffset'] - circumference * 0.875) < 0.01
+  );
   assert.equal(cTarget.props['stroke-opacity'], 1);
   assert.notEqual(cTarget.props.style.transition, 'none');
+});
+
+test('wraps radial ring when height changes even if step stays the same or increases, and advances directly within the same height', async (t) => {
+  installFastPollTimerMock(t);
+  const f = await createConsensusFixture(t, null, { blocktime: 6000 });
+
+  function getProgressCircle() {
+    const circles = findAll(f.container, (el) => el.type === 'circle');
+    return circles[1];
+  }
+
+  function reply(req, height, round, step) {
+    req.res.writeHead(200, { 'content-type': 'application/json' });
+    req.res.end(
+      JSON.stringify({
+        result: {
+          round_state: {
+            'height/round/step': `${height}/${round}/${step}`,
+            proposer: { address: proposerHex },
+          },
+        },
+      })
+    );
+  }
+
+  // 1st poll -> 500/0/3 (37.5%)
+  reply(await nextRequest(f, 0), '500', '0', '3');
+  await new Promise((r) => setTimeout(r, 15));
+  await nextTick();
+  const c1 = getProgressCircle();
+  const circumference = c1.props['stroke-dasharray'];
+  assert.ok(
+    Math.abs(c1.props['stroke-dashoffset'] - circumference * 0.625) < 0.01
+  );
+
+  // 2nd poll -> 501/0/3 (height changed, same step 37.5%) -> wraps through 100% first
+  reply(await nextRequest(f, 1), '501', '0', '3');
+  await new Promise((r) => setTimeout(r, 10));
+  await nextTick();
+  assert.equal(getProgressCircle().props['stroke-dashoffset'], 0);
+
+  await new Promise((r) => setTimeout(r, 270));
+  await nextTick();
+  assert.ok(
+    Math.abs(
+      getProgressCircle().props['stroke-dashoffset'] - circumference * 0.625
+    ) < 0.01
+  );
+
+  // 3rd poll -> 502/0/5 (height changed, higher step 62.5%) -> wraps through 100% first
+  reply(await nextRequest(f, 2), '502', '0', '5');
+  await new Promise((r) => setTimeout(r, 10));
+  await nextTick();
+  assert.equal(getProgressCircle().props['stroke-dashoffset'], 0);
+
+  await new Promise((r) => setTimeout(r, 270));
+  await nextTick();
+  assert.ok(
+    Math.abs(
+      getProgressCircle().props['stroke-dashoffset'] - circumference * 0.375
+    ) < 0.01
+  );
+
+  // 4th poll -> 502/0/6 (same height & round, higher step 75%) -> advances directly without wrapping to 100%
+  reply(await nextRequest(f, 3), '502', '0', '6');
+  await new Promise((r) => setTimeout(r, 10));
+  await nextTick();
+  assert.ok(
+    Math.abs(
+      getProgressCircle().props['stroke-dashoffset'] - circumference * 0.25
+    ) < 0.01
+  );
 });

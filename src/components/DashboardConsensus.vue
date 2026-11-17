@@ -87,10 +87,16 @@ const formattedHeight = computed(() => {
 
 const stepInfo = computed(() => consensusStepInfo(snapshot.value?.step));
 
-const WRAP_FILL_MS = 220;
-const WRAP_RESET_MS = 24;
+const NORMAL_STEP_TRANSITION = 'stroke-dashoffset 220ms ease-out';
+const WRAP_SETTLE_TRANSITION =
+  'stroke-dashoffset 240ms cubic-bezier(0, 0, 0.2, 1)';
+const WRAP_RESET_FALLBACK_MS = 16;
 const animatedPercent = ref(0);
 const ringTransitionEnabled = ref(true);
+const ringTransitionStyle = ref(NORMAL_STEP_TRANSITION);
+const progressCircleRef = ref<SVGCircleElement | null>(null);
+let lastHeight: string | null = null;
+let lastRound: string | null = null;
 let lastTargetPercent: number | null = null;
 let isWrappingRing = false;
 let pendingWrapTarget = 0;
@@ -108,8 +114,11 @@ function resetRingAnimation() {
   ++ringAnimationGen;
   clearRingTimers();
   isWrappingRing = false;
+  lastHeight = null;
+  lastRound = null;
   lastTargetPercent = null;
   ringTransitionEnabled.value = false;
+  ringTransitionStyle.value = NORMAL_STEP_TRANSITION;
   animatedPercent.value = 0;
 }
 
@@ -119,18 +128,26 @@ watch(
       ? `${snapshot.value.height}/${snapshot.value.round}/${snapshot.value.step}`
       : '',
   (key) => {
-    if (!key) {
+    if (!key || !snapshot.value?.available) {
       resetRingAnimation();
       return;
     }
 
+    const nextHeight = snapshot.value.height;
+    const nextRound = snapshot.value.round;
     const nextPercent = Math.min(100, Math.max(0, stepInfo.value.percent));
+    const prevHeight = lastHeight;
+    const prevRound = lastRound;
     const prevPercent = lastTargetPercent;
+
+    lastHeight = nextHeight;
+    lastRound = nextRound;
     lastTargetPercent = nextPercent;
 
     if (prevPercent === null) {
       clearRingTimers();
       isWrappingRing = false;
+      ringTransitionStyle.value = NORMAL_STEP_TRANSITION;
       ringTransitionEnabled.value = true;
       animatedPercent.value = nextPercent;
       return;
@@ -141,32 +158,68 @@ watch(
       return;
     }
 
-    if (nextPercent < prevPercent) {
+    const heightChanged = prevHeight !== null && nextHeight !== prevHeight;
+    const roundChanged = prevRound !== null && nextRound !== prevRound;
+
+    if (heightChanged || roundChanged || nextPercent < prevPercent) {
       const gen = ++ringAnimationGen;
       clearRingTimers();
       isWrappingRing = true;
       pendingWrapTarget = nextPercent;
+
+      const finishWrapToTarget = () => {
+        if (gen !== ringAnimationGen) return;
+        isWrappingRing = false;
+        ringTransitionStyle.value = WRAP_SETTLE_TRANSITION;
+        ringTransitionEnabled.value = true;
+        animatedPercent.value = pendingWrapTarget;
+      };
+
+      const startResetPhase = async () => {
+        if (gen !== ringAnimationGen) return;
+        ringTransitionEnabled.value = false;
+        animatedPercent.value = 0;
+        await nextTick();
+        if (gen !== ringAnimationGen) return;
+
+        if (
+          typeof window !== 'undefined' &&
+          typeof window.getComputedStyle === 'function' &&
+          progressCircleRef.value
+        ) {
+          // Commit the 0% reset state immediately so 0% -> target starts on the next frame.
+          void window.getComputedStyle(progressCircleRef.value)
+            .strokeDashoffset;
+          finishWrapToTarget();
+          return;
+        }
+
+        const t2 = setTimeout(finishWrapToTarget, WRAP_RESET_FALLBACK_MS);
+        ringTimers.push(t2);
+      };
+
+      const startPercent = Math.min(100, Math.max(0, animatedPercent.value));
+      if (startPercent >= 100) {
+        void startResetPhase();
+        return;
+      }
+
+      const fillDurationMs = Math.round(
+        Math.max(70, (100 - startPercent) * 1.8)
+      );
+      ringTransitionStyle.value = `stroke-dashoffset ${fillDurationMs}ms linear`;
       ringTransitionEnabled.value = true;
       animatedPercent.value = 100;
 
       const t1 = setTimeout(() => {
-        if (gen !== ringAnimationGen) return;
-        ringTransitionEnabled.value = false;
-        animatedPercent.value = 0;
-
-        const t2 = setTimeout(() => {
-          if (gen !== ringAnimationGen) return;
-          isWrappingRing = false;
-          ringTransitionEnabled.value = true;
-          animatedPercent.value = pendingWrapTarget;
-        }, WRAP_RESET_MS);
-        ringTimers.push(t2);
-      }, WRAP_FILL_MS);
+        void startResetPhase();
+      }, fillDurationMs);
       ringTimers.push(t1);
       return;
     }
 
     clearRingTimers();
+    ringTransitionStyle.value = NORMAL_STEP_TRANSITION;
     ringTransitionEnabled.value = true;
     animatedPercent.value = nextPercent;
   },
@@ -357,7 +410,10 @@ onScopeDispose(() => {
     data-dashboard-consensus
   >
     <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
-      <h2 id="dashboard-consensus-heading" class="text-lg font-semibold text-main">
+      <h2
+        id="dashboard-consensus-heading"
+        class="text-lg font-semibold text-main"
+      >
         Consensus State
       </h2>
       <RouterLink
@@ -430,7 +486,9 @@ onScopeDispose(() => {
       </div>
 
       <div class="flex-1 flex items-center justify-center py-2">
-        <div class="relative inline-flex items-center justify-center w-[180px] h-[180px]">
+        <div
+          class="relative inline-flex items-center justify-center w-[180px] h-[180px]"
+        >
           <svg
             class="w-full h-full"
             viewBox="0 0 180 180"
@@ -447,6 +505,7 @@ onScopeDispose(() => {
               class="text-primary/20"
             />
             <circle
+              ref="progressCircleRef"
               cx="90"
               cy="90"
               :r="RING_RADIUS"
@@ -461,16 +520,21 @@ onScopeDispose(() => {
               :stroke-opacity="animatedPercent > 0 ? 1 : 0"
               :style="{
                 transition: ringTransitionEnabled
-                  ? 'stroke-dashoffset 220ms ease-out, stroke-opacity 120ms linear'
+                  ? ringTransitionStyle
                   : 'none',
               }"
             />
           </svg>
-          <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
+          <div
+            class="absolute inset-0 flex flex-col items-center justify-center text-center px-4"
+          >
             <div class="text-2xl font-bold text-main tabular-nums">
               Step {{ snapshot.step }}
             </div>
-            <div v-if="stepInfo.name" class="text-xs font-medium text-primary mt-0.5">
+            <div
+              v-if="stepInfo.name"
+              class="text-xs font-medium text-primary mt-0.5"
+            >
               {{ stepInfo.name }}
             </div>
           </div>

@@ -24,6 +24,7 @@ function block(h, chain_id = 'firmachain-1', proposer_address = '') {
 
 test('shows up to 7 latest unique blocks, handles empty/error/chain-switch, and preserves cache scope disclaimer', async (t) => {
   const addresses = await loadProduct('src/libs/address.ts');
+  const validatorAvatar = await loadProduct('src/libs/validatorAvatar.ts');
   const types = await loadProduct('src/types/common.ts');
   const concentration = await loadProduct('src/libs/stakingConcentration.ts', {
     '@/libs/address': addresses,
@@ -99,6 +100,7 @@ test('shows up to 7 latest unique blocks, handles empty/error/chain-switch, and 
       '@/stores': stores,
       '@/libs/dashboardMetrics': metrics,
       '@/libs/address': addresses,
+      '@/libs/validatorAvatar': validatorAvatar,
       '@iconify/vue': {
         Icon: (p) => h('span', { 'data-icon': p.icon }),
       },

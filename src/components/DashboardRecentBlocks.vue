@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { consensusPubkeyToHexAddress, normalizeConsensusHex } from '@/libs/address';
 import { selectRecentDashboardBlocks } from '@/libs/dashboardMetrics';
+import { useValidatorAvatars } from '@/libs/validatorAvatar';
 import { useBaseStore, useBlockchain, useFormatter, useStakingStore } from '@/stores';
 import type { Validator } from '@/types';
 
@@ -13,56 +14,11 @@ const blockchain = useBlockchain();
 const format = useFormatter();
 const stakingStore = useStakingStore();
 
-function readCachedAvatars(): Record<string, string> {
-  try {
-    if (typeof localStorage === 'undefined') return {};
-    return JSON.parse(localStorage.getItem('avatars') || '{}') || {};
-  } catch {
-    return {};
-  }
-}
-
-const avatars = ref<Record<string, string>>(readCachedAvatars());
-const loadingIdentities = new Set<string>();
-
-function logoUrl(identity?: string): string {
-  if (!identity || !avatars.value[identity]) return '';
-  const url = avatars.value[identity];
-  return url.startsWith('http')
-    ? url
-    : `https://s3.amazonaws.com/keybase_processed_uploads/${url}`;
-}
-
-function loadAvatar(identity?: string) {
-  if (
-    !identity ||
-    avatars.value[identity] ||
-    loadingIdentities.has(identity) ||
-    typeof stakingStore.keybase !== 'function'
-  ) {
-    return;
-  }
-  loadingIdentities.add(identity);
-  Promise.resolve(stakingStore.keybase(identity))
-    .then((d) => {
-      const url = d?.them?.[0]?.pictures?.primary?.url;
-      if (!url) return;
-      const uri = String(url).replace(
-        'https://s3.amazonaws.com/keybase_processed_uploads/',
-        ''
-      );
-      avatars.value = { ...avatars.value, [identity]: uri };
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('avatars', JSON.stringify(avatars.value));
-      }
-    })
-    .catch(() => {
-      // Fallback icon remains rendered when Keybase lookup fails
-    })
-    .finally(() => {
-      loadingIdentities.delete(identity);
-    });
-}
+const { logoUrl, loadAvatar } = useValidatorAvatars(
+  typeof stakingStore.keybase === 'function'
+    ? (identity) => stakingStore.keybase(identity)
+    : undefined
+);
 
 const chainMatched = computed(
   () => !blockchain.chainName || blockchain.chainName === props.chain

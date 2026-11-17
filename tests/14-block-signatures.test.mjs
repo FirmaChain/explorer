@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createPinia, defineStore, setActivePinia } from 'pinia';
-import { nextTick, reactive } from 'vue';
+import { h, nextTick, reactive } from 'vue';
 import { sha256 } from '@cosmjs/crypto';
 import { toBase64, toHex } from '@cosmjs/encoding';
 import { loadProduct, mount } from './helpers/validator-renderer.mjs';
 import { button, click, findAll, rows, text } from './helpers/validator-renderer.mjs';
 
-function makeSigner(seed, moniker, power) {
+function makeSigner(seed, moniker, power, identity = '') {
   const pub = Buffer.alloc(32, seed);
   const bytes = sha256(pub).slice(0, 20);
   const hex = toHex(bytes).toUpperCase();
@@ -23,14 +23,14 @@ function makeSigner(seed, moniker, power) {
     },
     staking: {
       operator_address: `firmavaloper1v${seed}`,
-      description: { moniker },
+      description: { moniker, identity },
       consensus_pubkey: { '@type': '/cosmos.crypto.ed25519.PubKey', key: toBase64(pub) },
     },
   };
 }
 
-async function createSignatureFixture(t, { height = 50, latestHeight = 100, blockHandlers, valsetHandler, stakingValidators } = {}) {
-  const s1 = makeSigner(1, 'Validator-One', 60);
+async function createSignatureFixture(t, { height = 50, latestHeight = 100, blockHandlers, valsetHandler, stakingValidators, keybase } = {}) {
+  const s1 = makeSigner(1, 'Validator-One', 60, 'ID_1');
   const s2 = makeSigner(2, 'Validator-Two', 25);
   const s3 = makeSigner(3, 'Validator-Three', 15);
 
@@ -71,6 +71,7 @@ async function createSignatureFixture(t, { height = 50, latestHeight = 100, bloc
   });
 
   const addresses = await loadProduct('src/libs/address.ts');
+  const validatorAvatar = await loadProduct('src/libs/validatorAvatar.ts');
   const types = await loadProduct('src/types/common.ts');
   const concentration = await loadProduct('src/libs/stakingConcentration.ts', {
     '@/libs/address': addresses,
@@ -82,10 +83,19 @@ async function createSignatureFixture(t, { height = 50, latestHeight = 100, bloc
     '@/types': types,
   });
 
+  const stakingStore = reactive({
+    validators: stakingValidators || [s1.staking, s2.staking, s3.staking],
+    keybase:
+      keybase ||
+      (async (identity) => ({
+        them: [{ pictures: { primary: { url: `https://img.example/${identity}.png` } } }],
+      })),
+  });
+
   setActivePinia(createPinia());
   const stores = {
     useBlockchain: () => blockchain,
-    useStakingStore: () => ({ validators: stakingValidators || [s1.staking, s2.staking, s3.staking] }),
+    useStakingStore: () => stakingStore,
     useBankStore: () => ({}),
     useDashboard: () => ({ chains: {}, coingecko: {}, prices: {} }),
   };
@@ -99,7 +109,12 @@ async function createSignatureFixture(t, { height = 50, latestHeight = 100, bloc
   const component = (
     await loadProduct('src/components/BlockSignatures.vue', {
       '@/stores': stores,
+      '@/libs/address': addresses,
       '@/libs/blockSignatures': sigLib,
+      '@/libs/validatorAvatar': validatorAvatar,
+      '@iconify/vue': {
+        Icon: (p) => h('span', { 'data-icon': p.icon }),
+      },
     })
   ).default;
 
@@ -107,7 +122,7 @@ async function createSignatureFixture(t, { height = 50, latestHeight = 100, bloc
   const mounted = mount(component, props);
   t.after(() => mounted.app.unmount());
 
-  return { ...mounted, props, blockchain, requestedBlockHeights, signers: { s1, s2, s3 } };
+  return { ...mounted, props, blockchain, stakingStore, requestedBlockHeights, signers: { s1, s2, s3 } };
 }
 
 test('fetches H+1 last_commit and H validator set to display Signed/Nil/Absent statuses and exact voting power', async (t) => {
@@ -268,4 +283,81 @@ test('does not re-fetch historical block signatures when latestHeight advances, 
   await new Promise((r) => setTimeout(r, 20));
   await nextTick();
   assert.deepEqual(f.requestedBlockHeights, [101]);
+});
+
+test('renders validator avatar logos with fallback icon, lazy-loads per page, and enriches late staking validators', async (t) => {
+  const keybaseCalls = [];
+  const signers = Array.from({ length: 12 }, (_, i) =>
+    makeSigner(i + 1, `Val-${i + 1}`, 10, `ID-${i + 1}`)
+  );
+
+  // Start with empty stakingStore.validators to also verify reactive enrichment
+  const f = await createSignatureFixture(t, {
+    height: 10,
+    latestHeight: 50,
+    stakingValidators: [],
+    keybase: async (identity) => {
+      keybaseCalls.push(identity);
+      return {
+        them: [{ pictures: { primary: { url: `https://img.example/${identity}.png` } } }],
+      };
+    },
+    blockHandlers: async (h) => ({
+      block_id: { hash: `HASH-${h}` },
+      block: {
+        header: { height: String(h), chain_id: 'firmachain-1', time: '2026-11-17T00:00:00Z' },
+        last_commit: {
+          height: String(Number(h) - 1),
+          round: 0,
+          signatures: signers.map((s) => ({
+            block_id_flag: 'BLOCK_ID_FLAG_COMMIT',
+            validator_address: s.b64,
+            timestamp: '2026-11-17T00:00:01Z',
+            signature: 'sig',
+          })),
+        },
+      },
+    }),
+    valsetHandler: async (h) => ({
+      block_height: String(h),
+      validators: signers.map((s) => s.tm),
+      pagination: {},
+    }),
+  });
+
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+
+  // Before staking validators load, fallback icons render
+  assert.equal(
+    findAll(f.container, (el) => el.props['data-icon'] === 'mdi-help-circle-outline').length,
+    10
+  );
+  assert.equal(keybaseCalls.length, 0);
+
+  // Staking validators arrive -> enriches page 1 (10 items) and fetches only page 1 avatars
+  f.stakingStore.validators = signers.map((s) => s.staking);
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+
+  assert.equal(keybaseCalls.length, 10);
+  assert.equal(
+    findAll(f.container, (el) => el.type === 'img' && el.props.src === 'https://img.example/ID-1.png').length,
+    1
+  );
+
+  // Navigating to page 2 loads avatars for page 2 (ID-11, ID-12)
+  click(button(f.container, 'Next'));
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+
+  assert.equal(keybaseCalls.length, 12);
+  assert.equal(
+    findAll(f.container, (el) => el.type === 'img' && el.props.src === 'https://img.example/ID-11.png').length,
+    1
+  );
+  assert.equal(
+    findAll(f.container, (el) => el.type === 'img' && el.props.src === 'https://img.example/ID-12.png').length,
+    1
+  );
 });

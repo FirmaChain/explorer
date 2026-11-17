@@ -18,6 +18,7 @@ export interface BlockSignatureRow {
   consensusHex: string;
   moniker: string;
   operatorAddress: string;
+  identity: string;
   status: SignatureStatus;
   votingPower: string;
   timestamp: string;
@@ -203,6 +204,7 @@ export function buildBlockSignatures(
       consensusHex: hex,
       moniker: stakingVal?.description?.moniker || '',
       operatorAddress: stakingVal?.operator_address || '',
+      identity: stakingVal?.description?.identity || '',
       status,
       votingPower: tmVal ? String(tmVal.voting_power) : '',
       timestamp: sig?.timestamp || '',

@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onScopeDispose, ref, watch } from 'vue';
+import { Icon } from '@iconify/vue';
+import { consensusPubkeyToHexAddress, normalizeConsensusHex } from '@/libs/address';
 import { useBlockchain, useFormatter, useStakingStore } from '@/stores';
 import {
   buildBlockSignatures,
   fetchValidatorSetAtHeight,
   type BlockSignaturesSummary,
 } from '@/libs/blockSignatures';
+import { useValidatorAvatars } from '@/libs/validatorAvatar';
+import type { Validator } from '@/types';
 
 const props = defineProps<{
   height: number | string;
@@ -17,6 +21,12 @@ const blockchain = useBlockchain();
 const stakingStore = useStakingStore();
 const format = useFormatter();
 
+const { logoUrl, loadAvatar } = useValidatorAvatars(
+  typeof stakingStore.keybase === 'function'
+    ? (identity) => stakingStore.keybase(identity)
+    : undefined
+);
+
 const status = ref<'idle' | 'loading' | 'loaded' | 'pending_next' | 'error'>('idle');
 const error = ref('');
 const validatorSetWarning = ref('');
@@ -25,17 +35,53 @@ const pageSize = 10;
 const currentPage = ref(1);
 let generation = 0;
 
+const stakingByHex = computed(() => {
+  const map = new Map<string, Validator>();
+  for (const v of stakingStore.validators || []) {
+    const hex = normalizeConsensusHex(
+      consensusPubkeyToHexAddress(v.consensus_pubkey)
+    );
+    if (hex) map.set(hex, v);
+  }
+  return map;
+});
+
+const enrichedRows = computed(() => {
+  const rows = summary.value?.rows || [];
+  return rows.map((row) => {
+    const sv = row.consensusHex
+      ? stakingByHex.value.get(row.consensusHex)
+      : undefined;
+    if (!sv) return row;
+    return {
+      ...row,
+      moniker: row.moniker || sv.description?.moniker || '',
+      operatorAddress: row.operatorAddress || sv.operator_address || '',
+      identity: row.identity || sv.description?.identity || '',
+    };
+  });
+});
+
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil((summary.value?.rows.length || 0) / pageSize))
+  Math.max(1, Math.ceil(enrichedRows.value.length / pageSize))
 );
 
 const safePage = computed(() => Math.min(currentPage.value, totalPages.value));
 
 const paginatedRows = computed(() => {
-  const rows = summary.value?.rows || [];
   const start = (safePage.value - 1) * pageSize;
-  return rows.slice(start, start + pageSize);
+  return enrichedRows.value.slice(start, start + pageSize);
 });
+
+watch(
+  paginatedRows,
+  (rows) => {
+    for (const row of rows) {
+      if (row.identity) loadAvatar(row.identity);
+    }
+  },
+  { immediate: true }
+);
 
 async function loadSignatures() {
   const req = ++generation;
@@ -202,15 +248,40 @@ onScopeDispose(() => {
           </thead>
           <tbody>
             <tr v-for="row in paginatedRows" :key="row.key">
-              <td>
+              <td class="max-w-[260px]">
                 <RouterLink
                   v-if="row.operatorAddress"
-                  class="text-primary underline underline-offset-4"
+                  class="inline-flex items-center gap-2 text-primary hover:underline underline-offset-4 max-w-full"
                   :to="`/${chain}/staking/${row.operatorAddress}`"
                 >
-                  {{ row.moniker || row.operatorAddress }}
+                  <span
+                    class="avatar w-6 h-6 rounded-full shrink-0 overflow-hidden bg-base-200 flex items-center justify-center"
+                  >
+                    <img
+                      v-if="logoUrl(row.identity)"
+                      :src="logoUrl(row.identity)"
+                      :alt="row.moniker || row.operatorAddress"
+                      class="w-6 h-6 object-cover rounded-full"
+                    />
+                    <Icon
+                      v-else
+                      icon="mdi-help-circle-outline"
+                      class="w-5 h-5 text-base-content/60"
+                    />
+                  </span>
+                  <span class="truncate">{{ row.moniker || row.operatorAddress }}</span>
                 </RouterLink>
-                <span v-else>{{ row.consensusHex || 'Unknown validator' }}</span>
+                <span v-else class="inline-flex items-center gap-2 max-w-full">
+                  <span
+                    class="avatar w-6 h-6 rounded-full shrink-0 overflow-hidden bg-base-200 flex items-center justify-center"
+                  >
+                    <Icon
+                      icon="mdi-help-circle-outline"
+                      class="w-5 h-5 text-base-content/60"
+                    />
+                  </span>
+                  <span class="truncate">{{ row.consensusHex || 'Unknown validator' }}</span>
+                </span>
               </td>
               <td>{{ row.status }}</td>
               <td class="tabular-nums">{{ row.votingPower || '-' }}</td>

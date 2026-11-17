@@ -5,7 +5,7 @@ import { nextTick, reactive } from 'vue';
 import { sha256 } from '@cosmjs/crypto';
 import { toBase64, toHex } from '@cosmjs/encoding';
 import { loadProduct, mount } from './helpers/validator-renderer.mjs';
-import { findAll, text } from './helpers/validator-renderer.mjs';
+import { text } from './helpers/validator-renderer.mjs';
 
 function makeConsensusVal(seed, power) {
   const pub = Buffer.alloc(32, seed);
@@ -120,11 +120,10 @@ test('computeValidatorConcentration handles exact 34%, crossing, ties, zero deno
   assert.match(mismatch.error, /height mismatch/);
 });
 
-test('concentration stays invariant under search filtering and marks unavailable on consensus failure', async (t) => {
+test('staking validator list hides concentration badges', async (t) => {
   const v1 = makeConsensusVal(31, 40);
   const v2 = makeConsensusVal(32, 30);
   const v3 = makeConsensusVal(33, 30);
-  let failConsensus = false;
 
   const blockchain = reactive({
     chainName: 'firmachain',
@@ -136,10 +135,7 @@ test('concentration stays invariant under search filtering and marks unavailable
           ? { validators: [v1.staking, v2.staking, v3.staking], pagination: {} }
           : { validators: [], pagination: {} },
       getSlashingParams: async () => ({ params: { slash_fraction_double_sign: '0.05', slash_fraction_downtime: '0.01' } }),
-      getBaseValidatorsetLatest: async () => {
-        if (failConsensus) throw new Error('consensus 503');
-        return { block_height: '888', validators: [v1.tm, v2.tm, v3.tm], pagination: {} };
-      },
+      getBaseValidatorsetLatest: async () => ({ block_height: '888', validators: [v1.tm, v2.tm, v3.tm], pagination: {} }),
       getBaseValidatorsetAt: async () => ({ block_height: '888', validators: [], pagination: {} }),
     },
   });
@@ -210,21 +206,5 @@ test('concentration stays invariant under search filtering and marks unavailable
   await new Promise((r) => setTimeout(r, 20));
   await nextTick();
 
-  assert.doesNotMatch(text(mounted.container), /Consensus Concentration/);
-  assert.match(text(mounted.container), /Val-3134%/);
-  assert.doesNotMatch(text(mounted.container), /Val-3234%/);
-
-  // Filter table to Val-33 (not in top 34%): filtering must NOT promote Val-33 into top 34%
-  const searchInput = findAll(mounted.container, (el) => el.type === 'input')[0];
-  searchInput.props['onUpdate:modelValue']('Val-33');
-  await nextTick();
-  assert.doesNotMatch(text(mounted.container), /Val-3334%/);
-
-  // Clear filter and switch endpoint while consensus fails -> 34% badge disappears (unavailable)
-  searchInput.props['onUpdate:modelValue']('');
-  failConsensus = true;
-  blockchain.endpoint = { address: 'https://node-b.example' };
-  await new Promise((r) => setTimeout(r, 20));
-  await nextTick();
-  assert.doesNotMatch(text(mounted.container), /Val-3134%/);
+  assert.doesNotMatch(text(mounted.container), /34%/);
 });

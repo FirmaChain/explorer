@@ -215,7 +215,6 @@ const list = computed(() => {
     rank: string;
     logo: string;
     change24: number;
-    inTop34: boolean;
   }[] = [];
 
   if (tab.value === 'active') {
@@ -233,7 +232,6 @@ const list = computed(() => {
         rank: inTop34 ? 'error' : calculateRank(i),
         logo: logo(x.description?.identity),
         change24: change24(x),
-        inTop34,
       };
     });
   } else if (tab.value === 'featured') {
@@ -249,7 +247,6 @@ const list = computed(() => {
           rank: 'primary',
           logo: logo(x.description?.identity),
           change24: change24(x),
-          inTop34: false,
         }));
     }
   } else {
@@ -258,7 +255,6 @@ const list = computed(() => {
       rank: 'primary',
       logo: logo(x.description?.identity),
       change24: change24(x),
-      inTop34: false,
     }));
   }
 
@@ -460,7 +456,7 @@ loadAvatars();
                 </td>
               </tr>
               <tr
-                v-for="({ v, rank, logo, inTop34 }, i) in list"
+                v-for="({ v, rank, logo }, i) in list"
                 :key="v.operator_address"
                 class="hover:bg-gray-100 dark:hover:bg-[#384059]"
               >
@@ -505,12 +501,6 @@ loadAvatars();
                         >
                           {{ v.description?.moniker }}
                         </RouterLink>
-                        <span
-                          v-if="inTop34"
-                          class="badge badge-error badge-xs ml-2 text-white"
-                          title="Part of >=34% cumulative consensus voting power"
-                          >34%</span
-                        >
                       </span>
                       <span class="text-xs">{{ v.description?.website || v.description?.identity || '-' }}</span>
                     </div>

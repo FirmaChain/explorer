@@ -8,6 +8,10 @@ import {
 } from '@/libs/dashboardMetrics';
 import { useBaseStore, useBlockchain, useStakingStore } from '@/stores';
 
+const MIN_POLL_INTERVAL_MS = 2000;
+const DEFAULT_BLOCKTIME_MS = 6000;
+const MAX_BACKOFF_INTERVAL_MS = 30000;
+
 const props = defineProps<{ chain: string }>();
 
 const blockchain = useBlockchain();
@@ -17,9 +21,11 @@ const baseStore = useBaseStore();
 const loading = ref(false);
 const snapshot = ref<ConsensusSnapshot | null>(null);
 const error = ref('');
-let generation = 0;
-let timer: ReturnType<typeof setInterval> | null = null;
+let watchGeneration = 0;
+let requestGeneration = 0;
+let timer: ReturnType<typeof setTimeout> | null = null;
 let controller: AbortController | null = null;
+let consecutiveErrors = 0;
 
 const rpcEndpoint = computed(() => resolveRpcEndpoint(blockchain.current));
 
@@ -30,19 +36,62 @@ const validatorsWithHex = computed(() =>
   }))
 );
 
-function stopPolling() {
+function isDocumentHidden(): boolean {
+  return typeof document !== 'undefined' && Boolean(document.hidden);
+}
+
+function isContextActive(): boolean {
+  return blockchain.chainName === props.chain && Boolean(rpcEndpoint.value);
+}
+
+function computePollIntervalMs(): number {
+  const blocktime = Number(baseStore.blocktime);
+  const effectiveBlocktime =
+    Number.isFinite(blocktime) && blocktime > 0
+      ? blocktime
+      : DEFAULT_BLOCKTIME_MS;
+  const baseInterval = Math.max(
+    MIN_POLL_INTERVAL_MS,
+    Math.round(effectiveBlocktime / 2)
+  );
+  if (consecutiveErrors <= 0) return baseInterval;
+  return Math.min(
+    MAX_BACKOFF_INTERVAL_MS,
+    baseInterval * 2 ** Math.min(consecutiveErrors, 4)
+  );
+}
+
+function clearTimer() {
   if (timer !== null) {
-    clearInterval(timer);
+    clearTimeout(timer);
     timer = null;
   }
+}
+
+function stopPolling() {
+  ++requestGeneration;
+  clearTimer();
   if (controller) {
     controller.abort();
     controller = null;
   }
 }
 
-async function pollOnce() {
-  const req = ++generation;
+function scheduleNext(session: number) {
+  clearTimer();
+  if (session !== watchGeneration || !isContextActive() || isDocumentHidden()) {
+    return;
+  }
+  timer = setTimeout(() => {
+    timer = null;
+    void pollOnce(session);
+  }, computePollIntervalMs());
+}
+
+async function pollOnce(session = watchGeneration) {
+  if (session !== watchGeneration) return;
+  clearTimer();
+  const req = ++requestGeneration;
   const endpoint = rpcEndpoint.value;
   if (!endpoint) {
     snapshot.value = null;
@@ -51,52 +100,102 @@ async function pollOnce() {
     return;
   }
   if (controller) controller.abort();
-  controller = new AbortController();
+  const localController = new AbortController();
+  controller = localController;
   if (!snapshot.value) loading.value = true;
 
+  let shouldSchedule = false;
   try {
     const next = await fetchConsensusSnapshot(
       endpoint,
       validatorsWithHex.value,
-      controller.signal
+      localController.signal
     );
-    if (req !== generation) return;
+    if (session !== watchGeneration || req !== requestGeneration) return;
     snapshot.value = next;
     error.value = next.error;
+    consecutiveErrors = next.error ? consecutiveErrors + 1 : 0;
+    shouldSchedule = true;
   } catch (cause: any) {
-    if (req !== generation || cause?.name === 'AbortError') return;
+    if (
+      session !== watchGeneration ||
+      req !== requestGeneration ||
+      cause?.name === 'AbortError'
+    ) {
+      return;
+    }
     snapshot.value = null;
     error.value = cause instanceof Error ? cause.message : String(cause);
+    consecutiveErrors += 1;
+    shouldSchedule = true;
   } finally {
-    if (req === generation) loading.value = false;
+    if (controller === localController) {
+      controller = null;
+    }
+    if (session === watchGeneration && req === requestGeneration) {
+      loading.value = false;
+      if (shouldSchedule) {
+        scheduleNext(session);
+      }
+    }
   }
+}
+
+function handleRetry() {
+  consecutiveErrors = 0;
+  void pollOnce(watchGeneration);
+}
+
+function handleVisibilityChange() {
+  if (isDocumentHidden()) {
+    stopPolling();
+  } else if (isContextActive()) {
+    consecutiveErrors = 0;
+    void pollOnce(watchGeneration);
+  }
+}
+
+if (
+  typeof document !== 'undefined' &&
+  typeof document.addEventListener === 'function'
+) {
+  document.addEventListener('visibilitychange', handleVisibilityChange);
 }
 
 watch(
   () => [props.chain, blockchain.chainName, rpcEndpoint.value],
   async () => {
     stopPolling();
-    const reset = ++generation;
+    const session = ++watchGeneration;
+    consecutiveErrors = 0;
     snapshot.value = null;
     error.value = '';
     loading.value = true;
     await nextTick();
-    if (reset !== generation) return;
+    if (session !== watchGeneration) return;
     if (blockchain.chainName === props.chain) {
-      await pollOnce();
-      if (reset !== generation) return;
-      const interval = Math.max(2000, Math.round((baseStore.blocktime || 6000) / 2));
-      timer = setInterval(() => {
-        void pollOnce();
-      }, interval);
+      if (isDocumentHidden()) {
+        if (!rpcEndpoint.value) {
+          error.value = 'No RPC endpoint is configured for this chain.';
+        }
+        loading.value = false;
+        return;
+      }
+      await pollOnce(session);
     }
   },
   { immediate: true, flush: 'sync' }
 );
 
 onScopeDispose(() => {
-  ++generation;
+  ++watchGeneration;
   stopPolling();
+  if (
+    typeof document !== 'undefined' &&
+    typeof document.removeEventListener === 'function'
+  ) {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }
 });
 </script>
 
@@ -125,7 +224,7 @@ onScopeDispose(() => {
     </p>
     <div v-else-if="error" role="alert" class="text-sm text-error py-2">
       Consensus state unavailable: {{ error }}
-      <button type="button" class="btn btn-xs ml-2" @click="pollOnce">
+      <button type="button" class="btn btn-xs ml-2" @click="handleRetry">
         Retry
       </button>
     </div>

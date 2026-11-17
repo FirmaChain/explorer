@@ -11,7 +11,7 @@ import { button, click, findAll, text } from './helpers/validator-renderer.mjs';
 const pub = Buffer.alloc(32, 3);
 const proposerHex = toHex(sha256(pub).slice(0, 20)).toUpperCase();
 
-async function createConsensusFixture(t, handler) {
+async function createConsensusFixture(t, handler, options = {}) {
   const requests = [];
   const arrivals = new EventEmitter();
   const server = createHttpServer((req, res) => {
@@ -56,9 +56,10 @@ async function createConsensusFixture(t, handler) {
       endpoints: { rpc: [{ address: `${endpoint}/rpc-a` }] },
     },
   });
+  const baseStore = reactive({ blocktime: options.blocktime ?? 6000 });
   const stores = {
     useBlockchain: () => blockchain,
-    useBaseStore: () => ({ blocktime: 60000 }),
+    useBaseStore: () => baseStore,
     useStakingStore: () => ({
       validators: [
         {
@@ -90,7 +91,7 @@ async function createConsensusFixture(t, handler) {
     });
   }
 
-  return { ...mounted, props, blockchain, endpoint, requests, arrivals };
+  return { ...mounted, props, blockchain, baseStore, endpoint, requests, arrivals };
 }
 
 test('polls consensus_state, renders height/round/step/proposer, recovers from failure, and discards stale chain state', async (t) => {
@@ -132,4 +133,152 @@ test('polls consensus_state, renders height/round/step/proposer, recovers from f
   await nextTick();
   assert.match(text(f.container), /Height200Round1Step3/);
   assert.equal(findAll(f.container, (el) => el.props.role === 'alert').length, 0);
+});
+
+function installFastPollTimerMock(t) {
+  const origSetTimeout = globalThis.setTimeout;
+  const origClearTimeout = globalThis.clearTimeout;
+  const scheduledDelays = [];
+  globalThis.setTimeout = (fn, delay = 0, ...args) => {
+    const isConsensusTimer =
+      delay >= 2000 && new Error().stack?.includes('scheduleNext');
+    if (isConsensusTimer) {
+      scheduledDelays.push(delay);
+      return origSetTimeout(fn, 20, ...args);
+    }
+    return origSetTimeout(fn, delay, ...args);
+  };
+  globalThis.clearTimeout = (id) => origClearTimeout(id);
+  t.after(() => {
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.clearTimeout = origClearTimeout;
+  });
+  return scheduledDelays;
+}
+
+function installDocumentVisibilityMock(t, initialHidden = false) {
+  const listeners = new Map();
+  const prevDocument = globalThis.document;
+  const mockDocument = {
+    hidden: initialHidden,
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(fn);
+    },
+    removeEventListener(type, fn) {
+      listeners.get(type)?.delete(fn);
+    },
+    emit(type) {
+      for (const fn of listeners.get(type) || []) {
+        fn();
+      }
+    },
+    listenerCount(type) {
+      return listeners.get(type)?.size || 0;
+    },
+  };
+  globalThis.document = mockDocument;
+  t.after(() => {
+    if (prevDocument === undefined) {
+      delete globalThis.document;
+    } else {
+      globalThis.document = prevDocument;
+    }
+  });
+  return mockDocument;
+}
+
+async function nextRequest(f, index) {
+  while (f.requests.length <= index) {
+    await once(f.arrivals, 'request', { signal: AbortSignal.timeout(2000) });
+  }
+  return f.requests[index];
+}
+
+function sendRoundState(item, height) {
+  item.res.writeHead(200, { 'content-type': 'application/json' });
+  item.res.end(
+    JSON.stringify({
+      result: {
+        round_state: {
+          'height/round/step': `${height}/0/1`,
+          proposer: { address: proposerHex },
+        },
+      },
+    })
+  );
+}
+
+test('continues periodic polling automatically with error backoff and adaptive blocktime interval', async (t) => {
+  const scheduledDelays = installFastPollTimerMock(t);
+  const f = await createConsensusFixture(t, null, { blocktime: 6000 });
+
+  // 1st poll -> Height 101 (schedules 3000ms)
+  sendRoundState(await nextRequest(f, 0), '101');
+  await new Promise((r) => setTimeout(r, 10));
+  await nextTick();
+  assert.match(text(f.container), /Height101Round0Step1/);
+  assert.equal(scheduledDelays[0], 3000);
+
+  // 2nd poll -> 503 error (schedules 6000ms backoff)
+  const req2 = await nextRequest(f, 1);
+  req2.res.writeHead(503, { 'content-type': 'application/json' });
+  req2.res.end(JSON.stringify({ error: 'temporary failure' }));
+  await new Promise((r) => setTimeout(r, 10));
+  await nextTick();
+  assert.match(text(f.container), /Consensus state unavailable/);
+  assert.equal(scheduledDelays[1], 6000);
+
+  // 3rd poll -> recovers automatically to Height 103 (resets to 3000ms)
+  sendRoundState(await nextRequest(f, 2), '103');
+  await new Promise((r) => setTimeout(r, 10));
+  await nextTick();
+  assert.match(text(f.container), /Height103Round0Step1/);
+  assert.equal(scheduledDelays[2], 3000);
+});
+
+test('pauses polling when document is hidden, resumes immediately when visible, and cleans up listener on unmount', async (t) => {
+  installFastPollTimerMock(t);
+  const doc = installDocumentVisibilityMock(t, false);
+  let seq = 0;
+
+  const f = await createConsensusFixture(t, (item) => {
+    seq += 1;
+    item.res.writeHead(200, { 'content-type': 'application/json' });
+    item.res.end(
+      JSON.stringify({
+        result: {
+          round_state: {
+            'height/round/step': `${300 + seq}/0/2`,
+            proposer: { address: proposerHex },
+          },
+        },
+      })
+    );
+  });
+
+  await new Promise((r) => setTimeout(r, 15));
+  await nextTick();
+  assert.equal(doc.listenerCount('visibilitychange'), 1);
+  assert.match(text(f.container), /Height301Round0Step2/);
+
+  // Hide tab -> stops polling
+  doc.hidden = true;
+  doc.emit('visibilitychange');
+  const countWhenHidden = f.requests.length;
+
+  await new Promise((r) => setTimeout(r, 70));
+  assert.equal(f.requests.length, countWhenHidden);
+
+  // Show tab -> immediately polls and resumes periodic schedule
+  doc.hidden = false;
+  doc.emit('visibilitychange');
+  await new Promise((r) => setTimeout(r, 15));
+  await nextTick();
+  assert.ok(f.requests.length > countWhenHidden);
+  assert.match(text(f.container), /Height302Round0Step2/);
+
+  // Unmount removes visibilitychange listener
+  f.app.unmount();
+  assert.equal(doc.listenerCount('visibilitychange'), 0);
 });

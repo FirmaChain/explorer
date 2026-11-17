@@ -23,6 +23,21 @@ const store = useGovStore();
 const dialog = useTxDialog();
 const stakingStore = useStakingStore();
 const chainStore = useBlockchain();
+const baseStore = useBaseStore();
+
+const editorTheme = computed(() =>
+  baseStore.theme === 'light' ? 'light' : 'dark'
+);
+
+MdEditor.config({
+  markedRenderer(renderer) {
+    renderer.heading = (text, level, _raw, _slugger, _index, headingId) => {
+      const escapedId = String(headingId ?? '').replace(/"/g, '&quot;');
+      return `<h${level} id="${escapedId}">${text}</h${level}>`;
+    };
+    return renderer;
+  },
+});
 
 const turnoutSnapshot = ref<TurnoutSnapshotResult | null>(null);
 
@@ -239,43 +254,80 @@ const processList = computed(() => {
 function metaItem(metadata: string | undefined): { title: string; summary: string } {
   if (!metadata) {
     return { title: '', summary: '' };
-  } else if (metadata.startsWith('{') && metadata.endsWith('}')) {
-    return JSON.parse(metadata);
+  }
+  if (metadata.startsWith('{') && metadata.endsWith('}')) {
+    try {
+      return JSON.parse(metadata);
+    } catch {
+      return { title: metadata, summary: '' };
+    }
   }
   return { title: metadata, summary: '' };
 }
+
+const proposalTitle = computed(
+  () =>
+    proposal.value.title ||
+    proposal.value.content?.title ||
+    metaItem(proposal.value.metadata).title ||
+    ''
+);
+
+const proposalMarkdown = computed(
+  () =>
+    proposal.value.summary ||
+    proposal.value.content?.description ||
+    metaItem(proposal.value.metadata).summary ||
+    ''
+);
+
+const proposalContentMeta = computed(() => {
+  const content = proposal.value.content;
+  if (!content || typeof content !== 'object') return undefined;
+  const { description: _desc, ...rest } = content as Record<string, any>;
+  return Object.keys(rest).length ? rest : undefined;
+});
 </script>
 
 <template>
   <div>
-    <div class="bg-base-100 px-4 pt-3 pb-4 rounded mb-4 shadow">
-      <h2
-        class="card-title flex flex-col md:!justify-between md:!flex-row mb-2"
-      >
-        <p class="truncate w-full">
-          {{ proposal_id }}. {{ proposal.title }}
-        </p>
+    <!-- Proposal Header & Metadata (Type / Authority / Plan) -->
+    <div class="bg-base-100 px-5 pt-4 pb-4 rounded mb-4 shadow">
+      <div class="flex flex-col gap-2 md:!flex-row md:!items-start md:!justify-between">
+        <h2 class="text-xl font-semibold text-base-content leading-snug break-words">
+          {{ proposal_id }}. {{ proposalTitle }}
+        </h2>
         <div
-          class="badge badge-ghost"
+          class="badge badge-ghost shrink-0 self-start md:mt-0.5"
           :class="color === 'success' ? 'text-yes' : color === 'error' ? 'text-no' : 'text-info'"
         >
           {{ status }}
         </div>
-      </h2>
-      <div class="">
-        <ObjectElement :value="proposal.content" />
       </div>
-      <div v-if="proposal.summary">
-        <MdEditor
-          :model-value="
-            format.multiLine(
-              proposal.summary
-            )
-          "
-          previewOnly
-          class="md-editor-recover"
-        ></MdEditor>
+      <div
+        v-if="proposalContentMeta"
+        class="border-t border-base-300/60 mt-4 pt-3"
+      >
+        <ObjectElement :value="proposalContentMeta" />
       </div>
+    </div>
+
+    <!-- Proposal Markdown Description -->
+    <div
+      v-if="proposalMarkdown"
+      class="bg-base-100 px-5 pt-4 pb-5 rounded mb-4 shadow"
+      data-proposal-description
+    >
+      <div class="text-sm font-semibold uppercase tracking-wide text-base-content/70 pb-3 mb-4 border-b border-base-300/60">
+        Description
+      </div>
+      <MdEditor
+        :model-value="format.multiLine(proposalMarkdown)"
+        :theme="editorTheme"
+        previewTheme="github"
+        previewOnly
+        class="md-editor-recover proposal-markdown"
+      />
     </div>
     <!-- grid lg:!!grid-cols-3 auto-rows-max-->
     <!-- flex-col lg:!!flex-row flex -->
@@ -374,7 +426,10 @@ function metaItem(metadata: string | undefined): { title: string; summary: strin
                 {{ shortTime(proposal.voting_start_time) }}
               </div>
             </div>
-            <div class="pl-5 text-sm mt-2">
+            <div
+              v-if="proposal.status === 'PROPOSAL_STATUS_VOTING_PERIOD' && votingCountdown > 0"
+              class="pl-5 text-sm mt-2"
+            >
               <Countdown :time="votingCountdown" />
             </div>
           </div>
@@ -434,3 +489,164 @@ function metaItem(metadata: string | undefined): { title: string; summary: strin
     />
   </div>
 </template>
+
+<style scoped lang="scss">
+.proposal-markdown {
+  --md-bk-color: transparent;
+  --md-color: hsl(var(--bc));
+  --md-border-color: hsl(var(--bc) / 0.16);
+  background-color: transparent;
+}
+
+.proposal-markdown :deep(.md-editor-preview-wrapper) {
+  padding: 0;
+}
+
+.proposal-markdown :deep(.md-editor-preview) {
+  --md-theme-color: hsl(var(--bc) / 0.92);
+  --md-theme-bg-color: transparent;
+  --md-theme-bg-color-inset: hsl(var(--b2));
+  --md-theme-border-color: hsl(var(--bc) / 0.16);
+  --md-theme-border-color-inset: hsl(var(--bc) / 0.22);
+  --md-theme-link-color: hsl(var(--p));
+  --github-theme-code-inline-color: hsl(var(--bc));
+  --github-theme-code-inline-bg-color: hsl(var(--b2));
+  --github-theme-code-block-bg-color: hsl(var(--b2));
+  --github-theme-code-block-color: hsl(var(--bc) / 0.92);
+  --github-theme-table-border-color: hsl(var(--bc) / 0.16);
+  --github-theme-table-bg-color: hsl(var(--b2) / 0.55);
+  color: hsl(var(--bc) / 0.92);
+  font-size: 0.95rem;
+  line-height: 1.75;
+  word-break: break-word;
+}
+
+.proposal-markdown :deep(.md-editor-preview h1),
+.proposal-markdown :deep(.md-editor-preview h2),
+.proposal-markdown :deep(.md-editor-preview h3),
+.proposal-markdown :deep(.md-editor-preview h4) {
+  color: hsl(var(--bc));
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  word-break: break-word;
+}
+
+.proposal-markdown :deep(.md-editor-preview > :first-child) {
+  margin-top: 0;
+}
+
+.proposal-markdown :deep(.md-editor-preview h1) {
+  font-size: 1.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid hsl(var(--bc) / 0.14);
+}
+
+.proposal-markdown :deep(.md-editor-preview h2) {
+  font-size: 1.25rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid hsl(var(--bc) / 0.12);
+}
+
+.proposal-markdown :deep(.md-editor-preview h3) {
+  font-size: 1.1rem;
+}
+
+.proposal-markdown :deep(.md-editor-preview p) {
+  margin-top: 0;
+  margin-bottom: 0.95rem;
+  line-height: 1.75;
+}
+
+.proposal-markdown :deep(.md-editor-preview ul),
+.proposal-markdown :deep(.md-editor-preview ol) {
+  margin: 0.65rem 0 1rem;
+  padding-left: 1.5rem;
+}
+
+.proposal-markdown :deep(.md-editor-preview ul) {
+  list-style-type: disc;
+}
+
+.proposal-markdown :deep(.md-editor-preview ol) {
+  list-style-type: decimal;
+}
+
+.proposal-markdown :deep(.md-editor-preview li + li) {
+  margin-top: 0.35rem;
+}
+
+.proposal-markdown :deep(.md-editor-preview blockquote) {
+  margin: 1rem 0;
+  padding: 0.65rem 1rem;
+  border-left: 3px solid hsl(var(--p));
+  background-color: hsl(var(--b2) / 0.6);
+  border-radius: 0 0.375rem 0.375rem 0;
+  color: hsl(var(--bc) / 0.85);
+}
+
+.proposal-markdown :deep(.md-editor-preview blockquote p:last-child) {
+  margin-bottom: 0;
+}
+
+.proposal-markdown :deep(.md-editor-preview code) {
+  font-size: 0.85em;
+  background-color: hsl(var(--b2));
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+}
+
+.proposal-markdown :deep(.md-editor-preview pre) {
+  margin: 1rem 0;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--bc) / 0.12);
+  overflow-x: auto;
+}
+
+.proposal-markdown :deep(.md-editor-preview pre code) {
+  display: block;
+  padding: 0.9rem 1rem;
+  background-color: hsl(var(--b2));
+  line-height: 1.6;
+}
+
+.proposal-markdown :deep(.md-editor-preview table) {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.875rem;
+}
+
+.proposal-markdown :deep(.md-editor-preview th),
+.proposal-markdown :deep(.md-editor-preview td) {
+  border: 1px solid hsl(var(--bc) / 0.18);
+  padding: 0.5rem 0.75rem;
+}
+
+.proposal-markdown :deep(.md-editor-preview th) {
+  background-color: hsl(var(--b2));
+  font-weight: 600;
+}
+
+.proposal-markdown :deep(.md-editor-preview hr) {
+  border: none;
+  border-top: 1px solid hsl(var(--bc) / 0.15);
+  margin: 1.25rem 0;
+}
+
+.proposal-markdown :deep(.md-editor-preview a) {
+  color: hsl(var(--p)) !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.proposal-markdown :deep(.md-editor-preview img) {
+  max-width: 100%;
+  border-radius: 0.375rem;
+  margin: 0.75rem 0;
+}
+</style>

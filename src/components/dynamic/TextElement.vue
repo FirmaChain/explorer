@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { isBech32Address } from '@/libs/utils';
-import { useBlockchain, useFormatter } from '@/stores';
+import { useBaseStore, useBlockchain, useFormatter } from '@/stores';
 import MdEditor from 'md-editor-v3';
 import { computed, onMounted, ref } from 'vue';
 
@@ -8,7 +8,9 @@ import { fromBase64, toHex } from '@cosmjs/encoding';
 
 import { registry as nameMatcha } from '@leapwallet/name-matcha';
 
+const baseStore = useBaseStore();
 const chainStore = useBlockchain();
+const editorTheme = computed(() => (baseStore.theme === 'light' ? 'light' : 'dark'));
 const props = defineProps(['value']);
 const format = useFormatter();
 function isMD() {
@@ -55,7 +57,14 @@ const isConvertable = computed(() => {
 });
 </script>
 <template>
-  <MdEditor v-if="isMD()" :model-value="format.multiLine(value)" previewOnly class="md-editor-recover"></MdEditor>
+  <MdEditor
+    v-if="isMD()"
+    :model-value="format.multiLine(value)"
+    :theme="editorTheme"
+    previewTheme="github"
+    previewOnly
+    class="md-editor-recover"
+  ></MdEditor>
   <span v-else-if="isAddress()" class="flex">
     <RouterLink :to="`/${chainStore.chainName}/account/${text}`">{{ text }}</RouterLink>
     <div v-for="{ name, provider } in names">
@@ -92,6 +101,24 @@ const isConvertable = computed(() => {
 
 <style lang="scss">
 .md-editor-recover {
+  --md-bk-color: transparent;
+  --md-color: hsl(var(--bc));
+  --md-border-color: hsl(var(--bc) / 0.16);
+  background-color: transparent;
+
+  .md-editor-preview-wrapper {
+    padding: 0;
+  }
+
+  .md-editor-preview {
+    --md-theme-color: hsl(var(--bc) / 0.9);
+    --md-theme-bg-color: transparent;
+    --md-theme-link-color: hsl(var(--p));
+    color: hsl(var(--bc) / 0.9);
+    font-size: inherit;
+    word-break: break-word;
+  }
+
   .h1,
   h1 {
     font-size: 2rem;

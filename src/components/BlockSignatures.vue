@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onScopeDispose, ref, watch } from 'vue';
+import { computed, nextTick, onScopeDispose, ref, watch } from 'vue';
 import { useBlockchain, useFormatter, useStakingStore } from '@/stores';
 import {
   buildBlockSignatures,
@@ -21,7 +21,21 @@ const status = ref<'idle' | 'loading' | 'loaded' | 'pending_next' | 'error'>('id
 const error = ref('');
 const validatorSetWarning = ref('');
 const summary = ref<BlockSignaturesSummary | null>(null);
+const pageSize = 10;
+const currentPage = ref(1);
 let generation = 0;
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil((summary.value?.rows.length || 0) / pageSize))
+);
+
+const safePage = computed(() => Math.min(currentPage.value, totalPages.value));
+
+const paginatedRows = computed(() => {
+  const rows = summary.value?.rows || [];
+  const start = (safePage.value - 1) * pageSize;
+  return rows.slice(start, start + pageSize);
+});
 
 async function loadSignatures() {
   const req = ++generation;
@@ -94,7 +108,25 @@ watch(
     blockchain.chainName,
     blockchain.endpoint.address,
   ],
-  async () => {
+  async (nextVal, prevVal) => {
+    const contextChanged =
+      !prevVal ||
+      prevVal[0] !== nextVal[0] ||
+      prevVal[1] !== nextVal[1] ||
+      prevVal[3] !== nextVal[3] ||
+      prevVal[4] !== nextVal[4];
+
+    if (!contextChanged) {
+      if (
+        status.value !== 'pending_next' ||
+        Number(nextVal[2] || 0) <= Number(nextVal[0])
+      ) {
+        return;
+      }
+    } else {
+      currentPage.value = 1;
+    }
+
     const reset = ++generation;
     await nextTick();
     if (reset !== generation) return;
@@ -169,7 +201,7 @@ onScopeDispose(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in summary.rows" :key="row.key">
+            <tr v-for="row in paginatedRows" :key="row.key">
               <td>
                 <RouterLink
                   v-if="row.operatorAddress"
@@ -188,7 +220,42 @@ onScopeDispose(() => {
             </tr>
           </tbody>
         </table>
+        <nav
+          aria-label="Block signature pages"
+          class="mt-4 flex flex-wrap items-center gap-3"
+          data-block-signatures-pagination
+        >
+          <button
+            class="btn btn-sm"
+            type="button"
+            :disabled="safePage <= 1"
+            @click="currentPage = Math.max(1, safePage - 1)"
+          >
+            Previous
+          </button>
+          <span class="tabular-nums" aria-live="polite">
+            Page {{ safePage }} / {{ totalPages }}
+          </span>
+          <button
+            class="btn btn-sm signatures-primary"
+            type="button"
+            :disabled="safePage >= totalPages"
+            @click="currentPage = Math.min(totalPages, safePage + 1)"
+          >
+            Next
+          </button>
+        </nav>
       </div>
     </template>
   </section>
 </template>
+
+<style scoped>
+.signatures-primary:not(:disabled) {
+  background-color: hsl(var(--bc));
+  color: hsl(var(--b1));
+}
+.signatures-primary:not(:disabled):hover {
+  background-color: hsl(var(--bc) / 0.9);
+}
+</style>

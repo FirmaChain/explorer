@@ -5,7 +5,7 @@ import { nextTick, reactive } from 'vue';
 import { sha256 } from '@cosmjs/crypto';
 import { toBase64, toHex } from '@cosmjs/encoding';
 import { loadProduct, mount } from './helpers/validator-renderer.mjs';
-import { findAll, rows, text } from './helpers/validator-renderer.mjs';
+import { button, click, findAll, rows, text } from './helpers/validator-renderer.mjs';
 
 function makeSigner(seed, moniker, power) {
   const pub = Buffer.alloc(32, seed);
@@ -29,7 +29,7 @@ function makeSigner(seed, moniker, power) {
   };
 }
 
-async function createSignatureFixture(t, { height = 50, latestHeight = 100, blockHandlers, valsetHandler } = {}) {
+async function createSignatureFixture(t, { height = 50, latestHeight = 100, blockHandlers, valsetHandler, stakingValidators } = {}) {
   const s1 = makeSigner(1, 'Validator-One', 60);
   const s2 = makeSigner(2, 'Validator-Two', 25);
   const s3 = makeSigner(3, 'Validator-Three', 15);
@@ -85,7 +85,7 @@ async function createSignatureFixture(t, { height = 50, latestHeight = 100, bloc
   setActivePinia(createPinia());
   const stores = {
     useBlockchain: () => blockchain,
-    useStakingStore: () => ({ validators: [s1.staking, s2.staking, s3.staking] }),
+    useStakingStore: () => ({ validators: stakingValidators || [s1.staking, s2.staking, s3.staking] }),
     useBankStore: () => ({}),
     useDashboard: () => ({ chains: {}, coingecko: {}, prices: {} }),
   };
@@ -184,4 +184,88 @@ test('unknown validator address in commit disables uncertain voting power calcul
   await nextTick();
   assert.match(text(f.container), new RegExp(unknownHex));
   assert.match(text(f.container), /Signed Voting Power: Unavailable/);
+});
+
+test('paginates block signatures 10 rows per page', async (t) => {
+  const manySigners = Array.from({ length: 25 }, (_, i) =>
+    makeSigner(i + 1, `Val-${String(i + 1).padStart(2, '0')}`, 10)
+  );
+  const f = await createSignatureFixture(t, {
+    height: 10,
+    latestHeight: 50,
+    stakingValidators: manySigners.map((s) => s.staking),
+    blockHandlers: async (h) => ({
+      block_id: { hash: `HASH-${h}` },
+      block: {
+        header: { height: String(h), chain_id: 'firmachain-1', time: '2026-11-17T00:00:00Z' },
+        last_commit: {
+          height: String(Number(h) - 1),
+          round: 0,
+          signatures: manySigners.map((s) => ({
+            block_id_flag: 'BLOCK_ID_FLAG_COMMIT',
+            validator_address: s.b64,
+            timestamp: '2026-11-17T00:00:01Z',
+            signature: 'sig',
+          })),
+        },
+      },
+    }),
+    valsetHandler: async (h) => ({
+      block_height: String(h),
+      validators: manySigners.map((s) => s.tm),
+      pagination: {},
+    }),
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+
+  assert.equal(rows(f.container).length, 10);
+  assert.match(rows(f.container)[0], /Val-01/);
+  assert.match(rows(f.container)[9], /Val-10/);
+  assert.match(text(f.container), /Page 1 \/ 3/);
+  assert.equal(button(f.container, 'Previous').props.disabled, true);
+  assert.equal(button(f.container, 'Next').props.disabled, false);
+
+  click(button(f.container, 'Next'));
+  await nextTick();
+  assert.equal(rows(f.container).length, 10);
+  assert.match(rows(f.container)[0], /Val-11/);
+  assert.match(text(f.container), /Page 2 \/ 3/);
+
+  click(button(f.container, 'Next'));
+  await nextTick();
+  assert.equal(rows(f.container).length, 5);
+  assert.match(rows(f.container)[0], /Val-21/);
+  assert.match(text(f.container), /Page 3 \/ 3/);
+  assert.equal(button(f.container, 'Next').props.disabled, true);
+
+  click(button(f.container, 'Previous'));
+  await nextTick();
+  assert.match(text(f.container), /Page 2 \/ 3/);
+});
+
+test('does not re-fetch historical block signatures when latestHeight advances, and loads pending_next once', async (t) => {
+  const f = await createSignatureFixture(t, { height: 100, latestHeight: 100 });
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+
+  // At latest height 100, H+1 is not available yet
+  assert.equal(f.requestedBlockHeights.length, 0);
+  assert.match(text(f.container), /Waiting for block #101/);
+
+  // Block 101 arrives -> loads signatures for #100 once
+  f.props.latestHeight = 101;
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+  assert.deepEqual(f.requestedBlockHeights, [101]);
+  assert.match(text(f.container), /Validator-OneSigned60/);
+
+  // Subsequent new blocks (102, 103) must NOT reset or re-fetch finalized #100
+  f.props.latestHeight = 102;
+  await nextTick();
+  assert.doesNotMatch(text(f.container), /Loading block signatures/);
+  f.props.latestHeight = 103;
+  await new Promise((r) => setTimeout(r, 20));
+  await nextTick();
+  assert.deepEqual(f.requestedBlockHeights, [101]);
 });

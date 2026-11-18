@@ -43,17 +43,32 @@ function mergeDenomMetadata(denom: string, metadatas: DenomMetadata[]): SupplyAs
   const denomMetadata =
     metadatas.find((d) => d.base === denom) || metadatas.find((d) => d.base?.endsWith(denom));
   const globalAsset = findGlobalAssetConfig(denom) as SupplyAsset | undefined;
+  const ibcHash = denom.startsWith('ibc/') ? denom.slice(4) : '';
+  const ibcAsset = ibcHash ? (format.ibcMetadata[ibcHash] as SupplyAsset | undefined) : undefined;
 
-  if (globalAsset && denomMetadata) {
-    return {
-      ...denomMetadata,
-      ...globalAsset,
-      display: denomMetadata.display || globalAsset.display,
-      logo: globalAsset.logo_URIs?.svg || globalAsset.logo_URIs?.png || globalAsset.logo || undefined,
-    };
+  if (!denomMetadata && !ibcAsset && !globalAsset) {
+    return undefined;
   }
 
-  return globalAsset || (denomMetadata as SupplyAsset | undefined);
+  return {
+    ...denomMetadata,
+    ...ibcAsset,
+    ...globalAsset,
+    base: globalAsset?.base || denomMetadata?.base || denom,
+    symbol: globalAsset?.symbol || ibcAsset?.symbol || denomMetadata?.symbol,
+    display: denomMetadata?.display || ibcAsset?.display || globalAsset?.display,
+    denom_units:
+      globalAsset?.denom_units ||
+      (ibcAsset?.denom_units?.length ? ibcAsset.denom_units : denomMetadata?.denom_units),
+    logo:
+      globalAsset?.logo_URIs?.svg ||
+      globalAsset?.logo_URIs?.png ||
+      globalAsset?.logo ||
+      ibcAsset?.logo_URIs?.svg ||
+      ibcAsset?.logo_URIs?.png ||
+      ibcAsset?.logo ||
+      undefined,
+  };
 }
 
 function resolveSupplyAmount(coin: Coin, asset?: SupplyAsset): string {
@@ -84,7 +99,7 @@ const list = computed(() =>
       amount: resolveSupplyAmount(coin, asset),
       base: asset?.base || coin.denom,
       info: asset?.display || coin.denom,
-      logo: asset?.logo_URIs?.svg || asset?.logo_URIs?.png || asset?.logo || '/logo.svg',
+      logo: asset?.logo || asset?.logo_URIs?.svg || asset?.logo_URIs?.png || '/logo.svg',
     };
   })
 );
@@ -100,6 +115,15 @@ async function pageload(p: number) {
     denomMetadatas.value = denomsMetaResponse?.metadatas ?? [];
     supplyCoins.value = bankSupplyResponse?.supply ?? [];
     pageResponse.value = bankSupplyResponse?.pagination ?? ({} as Pagination);
+
+    supplyCoins.value.forEach((coin) => {
+      if (coin.denom.startsWith('ibc/')) {
+        const ibcHash = coin.denom.slice(4);
+        if (!format.ibcMetadata[ibcHash]) {
+          format.fetchDenomMetadata(ibcHash).catch(() => {});
+        }
+      }
+    });
   } catch (err) {
     console.error('Failed to load bank supply:', err);
     denomMetadatas.value = [];

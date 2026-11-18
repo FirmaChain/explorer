@@ -14,12 +14,14 @@ This project is licensed under the **GNU General Public License v2.0** (see [LIC
   - Added `src/components/charts/AreaChart.vue` for market price/volume and portfolio trend charts (`PriceMarketChart.vue`, `src/modules/wallet/portfolio.vue`).
   - Reimplemented `src/components/charts/DonutChart.vue` using inline SVG slices, percentage labels, and interactive legend.
   - Reimplemented `src/components/charts/TxsInBlocksChart.vue` using inline SVG bars and block transaction tooltips.
-  - Reimplemented `src/components/ValidatorCommissionRate.vue` gauge arc using inline SVG.
+  - Reimplemented `src/components/ValidatorCommissionRate.vue` gauge arc using inline SVG (`320×237`, filled annular sectors with `hsl(var(--b1))` borders, slice hover label switching, and click-to-expand parity).
   - Replaced `src/components/charts/apexChartConfig.ts` with `src/components/charts/chartConfig.ts` containing only theme/color helpers used by the SVG charts.
   - Removed obsolete `vue3-apexcharts` test stubs from `tests/03-validator-redelegations.test.mjs`, `tests/helpers/validator-fixture.mjs`, and `tests/helpers/validator-unbonding-fixture.mjs`.
 - **GPL-2.0 Section 2(a) & Section 3 alignment**:
   - Added prominent modification notices with change dates to modified source files.
-  - Updated `src/layouts/components/NavFooter.vue` `License` and `Github` links to point to `https://github.com/FirmaChain/explorer` while preserving original `Ping.pub` attribution.
+  - Updated `src/layouts/components/NavFooter.vue` `License` and `Github` links to point to `https://github.com/FirmaChain/explorer` (with `target="_blank" rel="noopener noreferrer"`) while preserving original `Ping.pub` attribution.
+- **Docs cleanup**:
+  - Removed temporary `ROUTE_FEATURE_COMPARISON.md`.
 
 ---
 

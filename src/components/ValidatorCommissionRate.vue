@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ApexCharts from 'vue3-apexcharts';
+import type { ApexOptions } from 'apexcharts';
 import { computed, type PropType } from 'vue';
 import { useFormatter } from '@/stores';
 import type { CommissionRate } from '@/types';
@@ -25,7 +26,7 @@ const series = computed(() => [s1.value, s2.value, s3, s4.value, s5.value]);
 
 const format = useFormatter();
 
-const chartConfig = computed(() => {
+const chartConfig = computed<ApexOptions>(() => {
   const secondaryText = `hsl(var(--bc))`;
   const primaryText = `hsl(var(--bc))`;
 

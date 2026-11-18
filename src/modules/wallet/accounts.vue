@@ -7,7 +7,6 @@ import { Icon } from '@iconify/vue';
 import { computed } from 'vue';
 import { ref } from 'vue';
 import { scanLocalKeys, type AccountEntry, scanCompatibleAccounts, type LocalKey } from './utils';
-import AdBanner from '@/components/ad/AdBanner.vue';
 
 const dashboard = useDashboard();
 const chainStore = useBlockchain();
@@ -210,13 +209,6 @@ async function loadBalances(chainName: string, endpoint: string, address: string
         </div>
       </div>
     </div>
-
-    <AdBanner
-      id="account-banner-ad"
-      unit="banner"
-      width="970px"
-      height="90px"
-    />
 
     <div class="overflow-x-auto">
       <div

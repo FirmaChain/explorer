@@ -2,8 +2,15 @@
 import { ref, onMounted, computed, watchEffect } from 'vue';
 import { fromHex, toBase64 } from '@cosmjs/encoding';
 import { Icon } from '@iconify/vue';
-import { useFormatter, useStakingStore, useBaseStore, useBlockchain, useDashboard } from '@/stores';
+import {
+  useFormatter,
+  useStakingStore,
+  useBaseStore,
+  useBlockchain,
+  useDashboard,
+} from '@/stores';
 import UptimeBar from '@/components/UptimeBar.vue';
+import TombstoneBadge from '@/components/TombstoneBadge.vue';
 import type { Block, Commit } from '@/types';
 import { consensusPubkeyToHexAddress, valconsToBase64 } from '@/libs';
 import type { SigningInfo } from '@/types/slashing';
@@ -17,7 +24,10 @@ const chainStore = useBlockchain();
 const dashboard = useDashboard();
 // storage local favorite validator ids
 const local = ref(
-  JSON.parse(localStorage.getItem('uptime-validators') || '{}') as Record<string, { name: string; address: string }[]>
+  JSON.parse(localStorage.getItem('uptime-validators') || '{}') as Record<
+    string,
+    { name: string; address: string }[]
+  >
 );
 const signingInfo = ref({} as Record<string, SigningInfo[]>);
 const selected = ref([] as string[]);
@@ -48,7 +58,9 @@ function initial() {
 
 const filterValidators = computed(() => {
   if (keyword.value) {
-    return validators.value.filter((x) => x.description.moniker.indexOf(keyword.value) > -1);
+    return validators.value.filter(
+      (x) => x.description.moniker.indexOf(keyword.value) > -1
+    );
   }
   return validators.value;
 });
@@ -61,7 +73,9 @@ const list = computed(() => {
       const info = signingInfo.value[chainName];
       if (vals && info) {
         vals.forEach((v) => {
-          const sigingInfo = info.find((x) => valconsToBase64(x.address) === v.address);
+          const sigingInfo = info.find(
+            (x) => valconsToBase64(x.address) === v.address
+          );
           list.push({
             chainName,
             v,
@@ -79,7 +93,9 @@ function add() {
   }
   const newList = [] as { name: string; address: string }[];
   selected.value.forEach((x) => {
-    const validator = validators.value.find((v) => consensusPubkeyToHexAddress(v.consensus_pubkey) === x);
+    const validator = validators.value.find(
+      (v) => consensusPubkeyToHexAddress(v.consensus_pubkey) === x
+    );
     if (validator)
       newList.push({
         name: validator.description.moniker || x,
@@ -94,7 +110,8 @@ function add() {
 
 function changeChain() {
   validators.value = [];
-  const endpoint = dashboard.chains[selectChain.value].endpoints.rest?.at(0)?.address;
+  const endpoint =
+    dashboard.chains[selectChain.value].endpoints.rest?.at(0)?.address;
   if (!endpoint) return;
 
   const client = CosmosRestClient.newDefault(endpoint);
@@ -127,10 +144,14 @@ function color(v: string) {
         class="lg:!flex lg:!items-center lg:!justify-between bg-base-100 p-5"
       >
         <div class="min-w-0 flex-1">
-          <h2 class="text-2xl font-bold leading-7 sm:!truncate sm:!text-3xl sm:!tracking-tight">
+          <h2
+            class="text-2xl font-bold leading-7 sm:!truncate sm:!text-3xl sm:!tracking-tight"
+          >
             {{ $t('uptime.my_validators') }}
           </h2>
-          <div class="mt-1 flex flex-col sm:!mt-0 sm:!flex-row sm:!flex-wrap sm:!space-x-6">
+          <div
+            class="mt-1 flex flex-col sm:!mt-0 sm:!flex-row sm:!flex-wrap sm:!space-x-6"
+          >
             <div class="mt-2 flex items-center text-sm text-base-content/70">
               <svg
                 class="mr-1.5 h-5 w-5 flex-shrink-0 text-base-content/60"
@@ -173,7 +194,8 @@ function color(v: string) {
             <td>{{ v.v.name }}</td>
             <td>
               <span v-if="v.sigingInfo">{{
-                Number(v.sigingInfo.index_offset) - Number(v.sigingInfo.start_height)
+                Number(v.sigingInfo.index_offset) -
+                Number(v.sigingInfo.start_height)
               }}</span>
             </td>
             <td>
@@ -197,16 +219,23 @@ function color(v: string) {
                 </div>
               </div>
             </td>
-            <td class="capitalize">{{ v.sigingInfo?.tombstoned }}</td>
             <td>
-              <span v-if="v.sigingInfo" class="badge" :class="color(v.sigingInfo?.missed_blocks_counter)">{{
-                v.sigingInfo?.missed_blocks_counter
-              }}</span>
+              <TombstoneBadge :tombstoned="v.sigingInfo?.tombstoned" />
+            </td>
+            <td>
+              <span
+                v-if="v.sigingInfo"
+                class="badge"
+                :class="color(v.sigingInfo?.missed_blocks_counter)"
+                >{{ v.sigingInfo?.missed_blocks_counter }}</span
+              >
             </td>
             <td class="">
-              <RouterLink :to="`/${v.chainName}/uptime/#blocks`" class="btn btn-xs btn-primary">{{
-                $t('module.blocks')
-              }}</RouterLink>
+              <RouterLink
+                :to="`/${v.chainName}/uptime/#blocks`"
+                class="btn btn-xs btn-primary"
+                >{{ $t('module.blocks') }}</RouterLink
+              >
             </td>
           </tr>
         </tbody>
@@ -236,12 +265,21 @@ function color(v: string) {
         <h3 class="text-lg font-bold">{{ $t('uptime.add_validators') }}</h3>
         <div class="form-control my-5 border-2">
           <div class="input-group input-group-md">
-            <select v-model="selectChain" class="select select-bordered capitalize" @change="changeChain">
+            <select
+              v-model="selectChain"
+              class="select select-bordered capitalize"
+              @change="changeChain"
+            >
               <option v-for="v in dashboard.chains" :value="v.chainName">
                 {{ v.chainName }}
               </option>
             </select>
-            <input v-model="keyword" type="text" class="input w-full" placeholder="keywords to filter validator" />
+            <input
+              v-model="keyword"
+              type="text"
+              class="input w-full"
+              placeholder="keywords to filter validator"
+            />
           </div>
         </div>
         <div class="py-4 max-h-60 overflow-y-auto">
@@ -256,7 +294,9 @@ function color(v: string) {
               <tr v-for="(v, i) in filterValidators">
                 <td>
                   <label :for="v.operator_address"
-                    ><div class="w-full">{{ i + 1 }}. {{ v.description.moniker }}</div></label
+                    ><div class="w-full">
+                      {{ i + 1 }}. {{ v.description.moniker }}
+                    </div></label
                   >
                 </td>
                 <td>

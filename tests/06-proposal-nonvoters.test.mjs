@@ -6,11 +6,11 @@ import { nextTick, reactive } from 'vue';
 import { toBase64, toBech32 } from '@cosmjs/encoding';
 import {
   QueryValidatorsResponse,
-} from 'cosmjs-types/cosmos/staking/v1beta1/query.js';
+} from 'cosmjs-types/cosmos/staking/v1beta1/query';
 import {
   QueryVotesResponse,
-} from 'cosmjs-types/cosmos/gov/v1beta1/query.js';
-import govTypes from 'cosmjs-types/cosmos/gov/v1beta1/gov.js';
+} from 'cosmjs-types/cosmos/gov/v1beta1/query';
+import govTypes from 'cosmjs-types/cosmos/gov/v1beta1/gov';
 const { VoteOption } = govTypes;
 import { loadProduct, mount } from './helpers/validator-renderer.mjs';
 import { rows, text } from './helpers/validator-renderer.mjs';

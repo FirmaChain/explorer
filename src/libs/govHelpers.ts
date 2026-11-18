@@ -227,7 +227,7 @@ export async function computeActiveProposalNonVoters(
 
       const reqBytes = QueryVotesRequest.encode(
         QueryVotesRequest.fromPartial({
-          proposalId: Number(proposalId),
+          proposalId: BigInt(proposalId),
           pagination: encodeProtoPageRequest(page),
         })
       ).finish();

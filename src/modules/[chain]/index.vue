@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import MdEditor from 'md-editor-v3';
+import { MdPreview } from 'md-editor-v3';
 import PriceMarketChart from '@/components/charts/PriceMarketChart.vue';
 
 import { Icon } from '@iconify/vue';
@@ -168,7 +168,9 @@ const amount = computed({
             <a
               v-for="(item, index) of comLinks"
               :key="index"
-              :href="item.href"
+              :href="item.href || undefined"
+              target="_blank"
+              rel="noopener noreferrer"
               class="link link-primary px-2 py-1 rounded-sm no-underline hover:text-primary hover:bg-gray-100 dark:hover:bg-slate-800 flex items-center"
             >
               <Icon :icon="item?.icon" />
@@ -343,13 +345,12 @@ const amount = computed({
       <template v-if="coinInfo.description?.en?.trim()">
         <div class="h-[1px] w-full bg-gray-100 dark:bg-[#384059]"></div>
         <div class="max-h-[250px] overflow-auto p-4 text-sm">
-          <MdEditor
+          <MdPreview
             :model-value="coinInfo.description?.en"
             :theme="editorTheme"
             previewTheme="github"
-            previewOnly
             class="md-editor-recover chain-description-markdown"
-          ></MdEditor>
+          />
         </div>
       </template>
       <div v-if="coinInfo.categories?.length" class="px-4 pb-4 pt-1 flex flex-wrap items-center gap-2">

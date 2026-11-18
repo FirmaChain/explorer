@@ -1,12 +1,10 @@
 <script lang="ts" setup>
 import { isBech32Address } from '@/libs/utils';
 import { useBaseStore, useBlockchain, useFormatter } from '@/stores';
-import MdEditor from 'md-editor-v3';
-import { computed, onMounted, ref } from 'vue';
+import { MdPreview } from 'md-editor-v3';
+import { computed, ref } from 'vue';
 
 import { fromBase64, toHex } from '@cosmjs/encoding';
-
-import { registry as nameMatcha } from '@leapwallet/name-matcha';
 
 const baseStore = useBaseStore();
 const chainStore = useBlockchain();
@@ -41,42 +39,21 @@ const text = computed(() => {
   return v;
 });
 
-const names = ref([] as { name?: any; provider?: string }[]);
-
-onMounted(() => {
-  if (isAddress())
-    nameMatcha.lookupAll(props.value).then((re) => {
-      names.value = Object.keys(re)
-        .map((key) => ({ name: re[key], provider: key }))
-        .filter((x) => x.name);
-    });
-});
 const toHexOutput = ref(false);
 const isConvertable = computed(() => {
   return String(props.value).endsWith('=') && props.value.length !== 28;
 });
 </script>
 <template>
-  <MdEditor
+  <MdPreview
     v-if="isMD()"
     :model-value="format.multiLine(value)"
     :theme="editorTheme"
     previewTheme="github"
-    previewOnly
     class="md-editor-recover"
-  ></MdEditor>
+  />
   <span v-else-if="isAddress()" class="flex">
     <RouterLink :to="`/${chainStore.chainName}/account/${text}`">{{ text }}</RouterLink>
-    <div v-for="{ name, provider } in names">
-      <span
-        class="text-xs truncate relative py-1 px-2 p2-4 w-fit ml-2 rounded text-success tooltip"
-        :data-tip="provider"
-        :title="provider"
-      >
-        <span class="inset-x-0 inset-y-0 opacity-10 absolute bg-success"></span>
-        <button>{{ name }}</button>
-      </span>
-    </div>
   </span>
   <span v-else class="flex"
     ><span class="break-words max-w-5xl">{{ text }}</span>

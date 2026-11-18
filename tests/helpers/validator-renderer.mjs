@@ -42,6 +42,13 @@ export async function loadProduct(path, dependencies = {}) {
   return module.exports;
 }
 
+if (typeof globalThis.Document === 'undefined') {
+  globalThis.Document = class Document {};
+}
+if (typeof globalThis.ShadowRoot === 'undefined') {
+  globalThis.ShadowRoot = class ShadowRoot {};
+}
+
 function node(type, text = '') {
   return {
     type,
@@ -52,6 +59,11 @@ function node(type, text = '') {
     parent: null,
     get options() {
       return this.children.filter((c) => c.type === 'option');
+    },
+    getRootNode() {
+      let current = this;
+      while (current.parent) current = current.parent;
+      return current;
     },
     addEventListener() {},
     removeEventListener() {},

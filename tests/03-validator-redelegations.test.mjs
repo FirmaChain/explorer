@@ -85,7 +85,7 @@ async function runtime() {
       hmr: { server: createHttpServer() },
     },
     appType: 'custom',
-    optimizeDeps: { disabled: true },
+    optimizeDeps: { noDiscovery: true },
     resolve: { alias: { '@': `${root}src` } },
     plugins: [
       {

@@ -30,7 +30,7 @@ test('collects multi-page votes without proposal_status bug, filters weighted vo
     configFile: false,
     server: { middlewareMode: true, watch: null, hmr: false },
     appType: 'custom',
-    optimizeDeps: { disabled: true },
+    optimizeDeps: { noDiscovery: true },
     resolve: { alias: { '@': `${root}src` } },
     plugins: [
       {

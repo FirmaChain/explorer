@@ -4,7 +4,6 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import vueJsx from '@vitejs/plugin-vue-jsx';
 import Layouts from 'vite-plugin-vue-layouts';
-import DefineOptions from 'unplugin-vue-define-options/vite';
 import AutoImport from 'unplugin-auto-import/vite';
 import Pages from 'vite-plugin-pages';
 
@@ -39,7 +38,6 @@ export default defineConfig({
       compositionOnly: true,
       include: [fileURLToPath(new URL('./src/plugins/i18n/locales/**', import.meta.url))],
     }),
-    DefineOptions(),
   ],
   resolve: {
     alias: {

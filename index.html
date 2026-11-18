@@ -4,13 +4,6 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/firmachain.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://v1.slise.xyz" crossorigin />
-    <link rel="dns-prefetch" href="https://v1.slise.xyz" />
-    <link
-      rel="preload"
-      href="https://v1.slise.xyz/scripts/embed.js"
-      as="script"
-    />
     <title>FIRMACHAIN | Explorer</title>
     <meta
       name="description"
@@ -35,7 +28,7 @@
     </script>
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://cdn.jsdelivr.net https://*.ping.pub https://v1.slise.xyz; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; img-src 'self' data: https:; connect-src 'self' https: http: data:; frame-src 'self' https://wallet.keplr.app https://*.slise.xyz; font-src 'self' data: https://fonts.gstatic.com;"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://*.ping.pub; style-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://fonts.googleapis.com; img-src 'self' data: https:; connect-src 'self' https: http: data:; frame-src 'self' https://wallet.keplr.app; font-src 'self' data: https://unpkg.com https://fonts.gstatic.com;"
     />
   </head>
   <body>
@@ -95,27 +88,6 @@
     </div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
-    <!-- Google tag (gtag.js) -->
-    <script
-      async
-      src="https://www.googletagmanager.com/gtag/js?id=G-SSBKVF3GMX"
-    ></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() {
-        dataLayer.push(arguments);
-      }
-      gtag('js', new Date());
-      // Set default consent to 'denied' as a placeholder
-      // Determine actual values based on your own requirements
-      gtag('consent', 'default', {
-        ad_storage: 'denied',
-        ad_user_data: 'denied',
-        ad_personalization: 'denied',
-        analytics_storage: 'denied',
-      });
-      gtag('config', 'G-SSBKVF3GMX');
-    </script>
     <script
       type="module"
       src="https://cdn.jsdelivr.net/npm/@ping-pub/widget@0.3.12/dist/widget.min.js"

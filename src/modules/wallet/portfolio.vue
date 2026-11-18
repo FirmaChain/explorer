@@ -9,7 +9,6 @@ import DonutChart from '@/components/charts/DonutChart.vue';
 import ApexCharts from 'vue3-apexcharts';
 import { subscribePrice } from '@/libs/priceWorkerClient';
 import { getMarketPriceChartConfig } from '@/components/charts/apexChartConfig';
-import AdBanner from '@/components/ad/AdBanner.vue';
 
 const format = useFormatter();
 const storageStore = useStorageStore();
@@ -316,7 +315,6 @@ const currencySign = computed(() => {
         </div>
       </div>
       <div class="overflow-x-auto mt-4">
-        <AdBanner class="bg-base-200" id="portfolio-banner-ad" unit="banner" width="970px" height="90px" />
         <table class="table w-full">
           <thead class="bg-base-200">
             <tr>

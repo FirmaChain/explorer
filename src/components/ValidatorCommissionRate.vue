@@ -1,12 +1,14 @@
 <!-- Modified by FirmaChain (2026-11-18) | Licensed under GNU GPL v2.0 (see LICENSE) -->
 <script setup lang="ts">
-import { computed, type PropType } from 'vue';
+import { computed, ref, type PropType } from 'vue';
 import { useFormatter } from '@/stores';
 import type { CommissionRate } from '@/types';
 
 const props = defineProps({
   commission: { type: Object as PropType<CommissionRate> },
 });
+
+const hoveredLabel = ref<string | null>(null);
 
 const rate = computed(() => Number(props.commission?.commission_rates.rate || 0) * 100);
 const change = computed(() => Number(props.commission?.commission_rates.max_change_rate || 0) * 100);
@@ -74,13 +76,16 @@ const gaugeSegments = computed(() => {
 
   let cursor = START_ANGLE;
   const result: Array<{ key: string; label: string; color: string; d: string }> = [];
+  const activeCount = values.filter((v) => v > 0).length;
+  const gapDeg = activeCount > 1 ? 1.5 : 0;
 
   values.forEach((val, idx) => {
     if (val <= 0) return;
     const sweep = (val / total) * TOTAL_SWEEP;
-    const segStart = cursor;
-    const segEnd = cursor + sweep;
-    cursor = segEnd;
+    const halfGap = sweep > gapDeg * 2 ? gapDeg / 2 : 0;
+    const segStart = cursor + halfGap;
+    const segEnd = cursor + sweep - halfGap;
+    cursor += sweep;
     if (segEnd - segStart > 0.1) {
       result.push({
         key: `seg-${idx}`,
@@ -93,6 +98,8 @@ const gaugeSegments = computed(() => {
 
   return result;
 });
+
+const centerLabel = computed(() => hoveredLabel.value ?? 'Commission Rate');
 </script>
 
 <template>
@@ -108,12 +115,15 @@ const gaugeSegments = computed(() => {
         role="img"
         :aria-label="`Commission Rate ${rate.toFixed(1)}%`"
       >
-        <g fill="none" stroke-width="15" stroke-linecap="butt">
+        <g fill="none" stroke-width="16" stroke-linecap="butt">
           <path
             v-for="seg in gaugeSegments"
             :key="seg.key"
             :d="seg.d"
             :stroke="seg.color"
+            class="cursor-pointer"
+            @mouseenter="hoveredLabel = seg.label"
+            @mouseleave="hoveredLabel = null"
           />
         </g>
         <text
@@ -121,7 +131,7 @@ const gaugeSegments = computed(() => {
           :y="CY - 4"
           text-anchor="middle"
           dominant-baseline="middle"
-          class="fill-base-content font-medium"
+          class="fill-base-content font-medium pointer-events-none"
           style="font-size: 32px"
         >
           {{ `${rate.toFixed(1)}%` }}
@@ -131,10 +141,10 @@ const gaugeSegments = computed(() => {
           :y="CY + 28"
           text-anchor="middle"
           dominant-baseline="middle"
-          class="fill-base-content/80"
+          class="fill-base-content/80 pointer-events-none"
           style="font-size: 15px"
         >
-          Commission Rate
+          {{ centerLabel }}
         </text>
       </svg>
     </div>

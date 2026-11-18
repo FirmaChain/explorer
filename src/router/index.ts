@@ -1,11 +1,72 @@
 import { useBlockchain, useDashboard } from '@/stores';
 import { LoadingStatus } from '@/stores/useDashboard';
-import { buildLegacyRedirect, matchLegacyPath, resolveLegacyTargetChain } from '@/libs/legacyRoutes';
-import { createRouter, createWebHistory } from 'vue-router';
-// @ts-ignore
-import { setupLayouts } from 'virtual:generated-layouts';
+import {
+  buildLegacyRedirect,
+  matchLegacyPath,
+  resolveLegacyTargetChain,
+} from '@/libs/legacyRoutes';
+import {
+  createRouter,
+  createWebHistory,
+  type RouteRecordRaw,
+} from 'vue-router';
 // @ts-ignore
 import routes from '~pages';
+
+const layoutComponents = {
+  default: () => import('@/layouts/default.vue'),
+  blank: () => import('@/layouts/blank.vue'),
+} as const;
+
+type LayoutName = keyof typeof layoutComponents;
+
+function resolveLayout(layout: unknown) {
+  if (typeof layout === 'string' && layout in layoutComponents) {
+    return layoutComponents[layout as LayoutName];
+  }
+  return layoutComponents.default;
+}
+
+/**
+ * Wrap a route with its layout component so routing does not depend on
+ * vite-plugin-vue-layouts.
+ */
+function wrapWithLayout(
+  route: RouteRecordRaw,
+  layout: unknown
+): RouteRecordRaw {
+  return {
+    path: route.path,
+    component: resolveLayout(layout),
+    children:
+      route.path === '/' ? [route] : [{ ...route, path: '' } as RouteRecordRaw],
+    meta: {
+      isLayout: true,
+    },
+  };
+}
+
+function setupLayouts(
+  rawRoutes: RouteRecordRaw[],
+  top = true
+): RouteRecordRaw[] {
+  return rawRoutes.map((route) => {
+    const normalizedRoute = route.children?.length
+      ? ({
+          ...route,
+          children: setupLayouts(route.children, false),
+        } as RouteRecordRaw)
+      : route;
+
+    const shouldWrap = top
+      ? normalizedRoute.meta?.layout !== false
+      : Boolean(normalizedRoute.meta?.layout);
+
+    return shouldWrap
+      ? wrapWithLayout(normalizedRoute, normalizedRoute.meta?.layout)
+      : normalizedRoute;
+  });
+}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),

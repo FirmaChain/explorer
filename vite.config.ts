@@ -3,7 +3,6 @@ import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import vueJsx from '@vitejs/plugin-vue-jsx';
-import Layouts from 'vite-plugin-vue-layouts';
 import AutoImport from 'unplugin-auto-import/vite';
 import Pages from 'vite-plugin-pages';
 
@@ -25,9 +24,6 @@ export default defineConfig({
     Pages({
       dirs: ['./src/modules', './src/pages'],
       exclude: ['**/*.ts'], // only load .vue as modules
-    }),
-    Layouts({
-      layoutsDirs: './src/layouts/',
     }),
     AutoImport({
       imports: ['vue', 'vue-router', '@vueuse/core', '@vueuse/math', 'vue-i18n', 'pinia'],

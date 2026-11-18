@@ -1,3 +1,4 @@
+<!-- Modified by FirmaChain (2026-11-18) | Licensed under GNU GPL v2.0 (see LICENSE) -->
 <script lang="ts" setup>
 import fetch from 'cross-fetch';
 import { onMounted, ref, computed, onUnmounted } from 'vue';

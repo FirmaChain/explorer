@@ -1,3 +1,4 @@
+// Modified by FirmaChain (2026-11-17) | Licensed under GNU GPL v2.0 (see LICENSE)
 // import 'ping-widget';
 import App from '@/App.vue';
 import i18n from '@/plugins/i18n';

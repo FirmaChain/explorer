@@ -1,3 +1,4 @@
+<!-- Modified by FirmaChain (2026-11-18) | Licensed under GNU GPL v2.0 (see LICENSE) -->
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { suggestChain } from '@leapwallet/cosmos-snap-provider';

@@ -1,3 +1,4 @@
+// Modified by FirmaChain (2026-11-17) | Licensed under GNU GPL v2.0 (see LICENSE)
 import { defineStore } from 'pinia';
 import { useBlockchain, useBankStore, useStakingStore, useDashboard } from '@/stores';
 import numeral from 'numeral';

@@ -168,7 +168,9 @@ const amount = computed({
             <a
               v-for="(item, index) of comLinks"
               :key="index"
-              :href="item.href"
+              :href="item.href || undefined"
+              target="_blank"
+              rel="noopener noreferrer"
               class="link link-primary px-2 py-1 rounded-sm no-underline hover:text-primary hover:bg-gray-100 dark:hover:bg-slate-800 flex items-center"
             >
               <Icon :icon="item?.icon" />

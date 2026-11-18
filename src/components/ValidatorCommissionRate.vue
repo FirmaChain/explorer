@@ -8,7 +8,8 @@ const props = defineProps({
   commission: { type: Object as PropType<CommissionRate> },
 });
 
-const hoveredLabel = ref<string | null>(null);
+const hoveredIndex = ref<number | null>(null);
+const selectedIndex = ref<number | null>(null);
 
 const rate = computed(() => Number(props.commission?.commission_rates.rate || 0) * 100);
 const change = computed(() => Number(props.commission?.commission_rates.max_change_rate || 0) * 100);
@@ -37,9 +38,14 @@ const COLORS = [
 
 const LABELS = ['Available', 'Daily Change', 'Commission Rate', 'Daily Change', 'Available'];
 
-const CX = 120;
-const CY = 115;
-const RADIUS = 82;
+// Match ApexCharts sizing inside .w-80 (320px x 237px, customScale: 0.9, donut.size: 83%)
+const VIEW_W = 320;
+const VIEW_H = 237;
+const CX = 160;
+const CY = 122;
+const OUTER_R = 101;
+const INNER_R = 84;
+const EXPAND_OFFSET = 9;
 const START_ANGLE = -130;
 const END_ANGLE = 130;
 const TOTAL_SWEEP = END_ANGLE - START_ANGLE;
@@ -52,46 +58,75 @@ function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   };
 }
 
-function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number): string {
+function describeDonutSector(
+  cx: number,
+  cy: number,
+  outerR: number,
+  innerR: number,
+  startAngle: number,
+  endAngle: number
+): string {
   const clampedEnd = Math.min(endAngle, startAngle + 359.99);
-  const start = polarToCartesian(cx, cy, r, startAngle);
-  const end = polarToCartesian(cx, cy, r, clampedEnd);
-  const largeArcFlag = clampedEnd - startAngle > 180 ? 1 : 0;
-  return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${r} ${r} 0 ${largeArcFlag} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
+  const largeArc = clampedEnd - startAngle > 180 ? 1 : 0;
+  const outerStart = polarToCartesian(cx, cy, outerR, startAngle);
+  const outerEnd = polarToCartesian(cx, cy, outerR, clampedEnd);
+  const innerEnd = polarToCartesian(cx, cy, innerR, clampedEnd);
+  const innerStart = polarToCartesian(cx, cy, innerR, startAngle);
+
+  return [
+    `M ${outerStart.x.toFixed(2)} ${outerStart.y.toFixed(2)}`,
+    `A ${outerR} ${outerR} 0 ${largeArc} 1 ${outerEnd.x.toFixed(2)} ${outerEnd.y.toFixed(2)}`,
+    `L ${innerEnd.x.toFixed(2)} ${innerEnd.y.toFixed(2)}`,
+    `A ${innerR} ${innerR} 0 ${largeArc} 0 ${innerStart.x.toFixed(2)} ${innerStart.y.toFixed(2)}`,
+    'Z',
+  ].join(' ');
 }
 
-const gaugeSegments = computed(() => {
+interface GaugeSegment {
+  index: number;
+  key: string;
+  label: string;
+  color: string;
+  d: string;
+  expandTransform: string;
+}
+
+const gaugeSegments = computed<GaugeSegment[]>(() => {
   const values = series.value.map((v) => Math.max(0, Number(v) || 0));
   const total = values.reduce((acc, v) => acc + v, 0);
   if (total <= 0) {
     return [
       {
+        index: 0,
         key: 'empty',
         label: 'Available',
         color: COLORS[0],
-        d: describeArc(CX, CY, RADIUS, START_ANGLE, END_ANGLE),
+        d: describeDonutSector(CX, CY, OUTER_R, INNER_R, START_ANGLE, END_ANGLE),
+        expandTransform: '',
       },
     ];
   }
 
   let cursor = START_ANGLE;
-  const result: Array<{ key: string; label: string; color: string; d: string }> = [];
-  const activeCount = values.filter((v) => v > 0).length;
-  const gapDeg = activeCount > 1 ? 1.5 : 0;
+  const result: GaugeSegment[] = [];
 
   values.forEach((val, idx) => {
     if (val <= 0) return;
     const sweep = (val / total) * TOTAL_SWEEP;
-    const halfGap = sweep > gapDeg * 2 ? gapDeg / 2 : 0;
-    const segStart = cursor + halfGap;
-    const segEnd = cursor + sweep - halfGap;
-    cursor += sweep;
+    const segStart = cursor;
+    const segEnd = cursor + sweep;
+    cursor = segEnd;
     if (segEnd - segStart > 0.1) {
+      const midRad = (((segStart + segEnd) / 2 - 90) * Math.PI) / 180;
+      const dx = (EXPAND_OFFSET * Math.cos(midRad)).toFixed(2);
+      const dy = (EXPAND_OFFSET * Math.sin(midRad)).toFixed(2);
       result.push({
+        index: idx,
         key: `seg-${idx}`,
         label: LABELS[idx],
         color: COLORS[idx],
-        d: describeArc(CX, CY, RADIUS, segStart, segEnd),
+        d: describeDonutSector(CX, CY, OUTER_R, INNER_R, segStart, segEnd),
+        expandTransform: `translate(${dx} ${dy})`,
       });
     }
   });
@@ -99,7 +134,15 @@ const gaugeSegments = computed(() => {
   return result;
 });
 
-const centerLabel = computed(() => hoveredLabel.value ?? 'Commission Rate');
+function toggleSlice(index: number) {
+  selectedIndex.value = selectedIndex.value === index ? null : index;
+}
+
+const centerLabel = computed(() => {
+  const activeIdx = hoveredIndex.value ?? selectedIndex.value;
+  if (activeIdx === null) return 'Commission Rate';
+  return gaugeSegments.value.find((s) => s.index === activeIdx)?.label ?? 'Commission Rate';
+});
 </script>
 
 <template>
@@ -108,41 +151,48 @@ const centerLabel = computed(() => hoveredLabel.value ?? 'Commission Rate');
     <div class="text-sm text-base-content/70">
       {{ `Updated at ${format.toDay(props.commission?.update_time, 'short')}` }}
     </div>
-    <div class="w-80 max-w-full m-auto flex justify-center py-2">
+    <div class="w-80 max-w-full m-auto">
       <svg
-        viewBox="0 0 240 200"
-        class="w-[220px] h-[185px] overflow-visible"
+        :viewBox="`0 0 ${VIEW_W} ${VIEW_H}`"
+        class="w-full h-[237px] overflow-visible select-none"
         role="img"
         :aria-label="`Commission Rate ${rate.toFixed(1)}%`"
       >
-        <g fill="none" stroke-width="16" stroke-linecap="butt">
+        <g>
           <path
             v-for="seg in gaugeSegments"
             :key="seg.key"
             :d="seg.d"
-            :stroke="seg.color"
-            class="cursor-pointer"
-            @mouseenter="hoveredLabel = seg.label"
-            @mouseleave="hoveredLabel = null"
+            :fill="seg.color"
+            stroke="hsl(var(--b1))"
+            stroke-width="2.7"
+            stroke-linejoin="round"
+            :transform="selectedIndex === seg.index ? seg.expandTransform : undefined"
+            class="transition-transform duration-200"
+            @mouseenter="hoveredIndex = seg.index"
+            @mouseleave="hoveredIndex = null"
+            @click="toggleSlice(seg.index)"
           />
         </g>
         <text
           :x="CX"
-          :y="CY - 4"
+          :y="CY + 1"
           text-anchor="middle"
           dominant-baseline="middle"
-          class="fill-base-content font-medium pointer-events-none"
-          style="font-size: 32px"
+          class="font-medium pointer-events-none"
+          fill="hsl(var(--bc))"
+          style="font-size: 30.6px"
         >
           {{ `${rate.toFixed(1)}%` }}
         </text>
         <text
           :x="CX"
-          :y="CY + 28"
+          :y="CY + 25"
           text-anchor="middle"
           dominant-baseline="middle"
-          class="fill-base-content/80 pointer-events-none"
-          style="font-size: 15px"
+          class="pointer-events-none"
+          fill="hsl(var(--bc))"
+          style="font-size: 14.4px"
         >
           {{ centerLabel }}
         </text>

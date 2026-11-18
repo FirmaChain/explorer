@@ -88,14 +88,14 @@ export async function queryAbci(
 export function encodeProtoPageRequest(page?: PageRequest) {
   if (!page) {
     return {
-      limit: 10,
+      limit: BigInt(10),
       countTotal: false,
     };
   }
   return {
     key: page.key ? fromBase64(page.key) : new Uint8Array(),
-    offset: !page.key && page.offset !== undefined ? page.offset : 0,
-    limit: page.limit || 10,
+    offset: BigInt(!page.key && page.offset !== undefined ? page.offset : 0),
+    limit: BigInt(page.limit || 10),
     countTotal: Boolean(page.count_total),
     reverse: Boolean(page.reverse),
   };

@@ -1,11 +1,12 @@
 <script lang="ts" setup>
 import ApexCharts from 'vue3-apexcharts';
+import type { ApexOptions } from 'apexcharts';
 import { computed, ref } from '@vue/reactivity';
 import { useBaseStore } from '@/stores';
 
 const baseStore = useBaseStore();
 
-const options = computed(() => {
+const options = computed<ApexOptions>(() => {
   return {
     chart: {
       type: 'bar',

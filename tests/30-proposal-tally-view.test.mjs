@@ -27,13 +27,12 @@ test('proposal detail Tally keeps Turnout as 1 row and combines Yes, No, No With
   });
 
   const MdEditorStub = {
-    name: 'MdEditor',
-    props: ['modelValue', 'theme', 'previewTheme', 'previewOnly'],
+    name: 'MdPreview',
+    props: ['modelValue', 'theme', 'previewTheme'],
     render() {
       return null;
     },
   };
-  MdEditorStub.config = () => {};
 
   const EmptyStub = { render: () => null };
 
@@ -41,7 +40,7 @@ test('proposal detail Tally keeps Turnout as 1 row and combines Yes, No, No With
     'src/modules/[chain]/gov/[proposal_id].vue',
     {
       '@vue/reactivity': Vue,
-      'md-editor-v3': MdEditorStub,
+      'md-editor-v3': { MdPreview: MdEditorStub },
       '@/components/dynamic/ObjectElement.vue': EmptyStub,
       '@/components/Countdown.vue': EmptyStub,
       '@/components/ProposalDeposits.vue': EmptyStub,
@@ -187,14 +186,13 @@ test('proposal detail Tally handles zero votes cleanly', async () => {
   });
 
   const MdEditorStub = { render: () => null };
-  MdEditorStub.config = () => {};
   const EmptyStub = { render: () => null };
 
   const Component = await loadProduct(
     'src/modules/[chain]/gov/[proposal_id].vue',
     {
       '@vue/reactivity': Vue,
-      'md-editor-v3': MdEditorStub,
+      'md-editor-v3': { MdPreview: MdEditorStub },
       '@/components/dynamic/ObjectElement.vue': EmptyStub,
       '@/components/Countdown.vue': EmptyStub,
       '@/components/ProposalDeposits.vue': EmptyStub,

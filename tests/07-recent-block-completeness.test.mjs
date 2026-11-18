@@ -4,7 +4,7 @@ import { createServer } from 'vite';
 import { createPinia, setActivePinia } from 'pinia';
 import { reactive } from 'vue';
 import { toBase64 } from '@cosmjs/encoding';
-import { Tx, TxBody, AuthInfo, Fee } from 'cosmjs-types/cosmos/tx/v1beta1/tx.js';
+import { Tx, TxBody, AuthInfo, Fee } from 'cosmjs-types/cosmos/tx/v1beta1/tx';
 import { loadProduct, root } from './helpers/validator-renderer.mjs';
 
 function makeRawTx(memo) {

@@ -57,17 +57,18 @@ const vals = computed(() => {
   });
 });
 
-function showName(i: number, text: string) {
+function showName(i: number | string, text: string) {
+  const idx = Number(i);
   if (text === 'nil-Vote') {
     // @ts-ignore
-    if (positions.value?.[i]?.address) {
+    if (positions.value?.[idx]?.address) {
       const val = vals.value.find(
         // @ts-ignore
-        (x) => x.hex === positions.value?.[i]?.address
+        (x) => x.hex === positions.value?.[idx]?.address
       );
-      return val?.description?.moniker || i;
+      return val?.description?.moniker || idx;
     }
-    return i;
+    return idx;
   }
   // const txt = text.substring(text.indexOf(':') + 1, text.indexOf(' '));
   // const sig = text.split(' ');

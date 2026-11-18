@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { computed } from '@vue/reactivity';
-import MdEditor from 'md-editor-v3';
+import { MdPreview } from 'md-editor-v3';
 import ObjectElement from '@/components/dynamic/ObjectElement.vue';
 import { useBaseStore, useBlockchain, useFormatter, useGovStore, useStakingStore, useTxDialog } from '@/stores';
 import type { GovProposal } from '@/types';
@@ -28,16 +28,6 @@ const baseStore = useBaseStore();
 const editorTheme = computed(() =>
   baseStore.theme === 'light' ? 'light' : 'dark'
 );
-
-MdEditor.config({
-  markedRenderer(renderer) {
-    renderer.heading = (text, level, _raw, _slugger, _index, headingId) => {
-      const escapedId = String(headingId ?? '').replace(/"/g, '&quot;');
-      return `<h${level} id="${escapedId}">${text}</h${level}>`;
-    };
-    return renderer;
-  },
-});
 
 const turnoutSnapshot = ref<TurnoutSnapshotResult | null>(null);
 
@@ -347,11 +337,10 @@ const proposalContentMeta = computed(() => {
       <div class="text-sm font-semibold uppercase tracking-wide text-base-content/70 pb-3 mb-4 border-b border-base-300/60">
         Description
       </div>
-      <MdEditor
+      <MdPreview
         :model-value="format.multiLine(proposalMarkdown)"
         :theme="editorTheme"
         previewTheme="github"
-        previewOnly
         class="md-editor-recover proposal-markdown"
       />
     </div>

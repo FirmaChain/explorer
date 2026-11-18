@@ -10,7 +10,7 @@ import { fromHex, toBase64, toBech32 } from '@cosmjs/encoding';
 import {
   QueryRedelegationsRequest,
   QueryRedelegationsResponse,
-} from 'cosmjs-types/cosmos/staking/v1beta1/query.js';
+} from 'cosmjs-types/cosmos/staking/v1beta1/query';
 import { loadProduct, mount, root } from './helpers/validator-renderer.mjs';
 import {
   button,
@@ -343,7 +343,7 @@ test(
     assert.equal(decodedReq.srcValidatorAddr, srcValidator);
     assert.equal(decodedReq.delegatorAddr, '');
     assert.equal(decodedReq.dstValidatorAddr, '');
-    assert.equal(decodedReq.pagination.limit.toNumber(), 10);
+    assert.equal(Number(decodedReq.pagination.limit), 10);
     assert.equal(decodedReq.pagination.countTotal, false);
 
     const t1 = '2026-12-01T00:00:00.000Z';

@@ -1,4 +1,5 @@
 import { useBlockchain } from '@/stores';
+import type { ApexOptions } from 'apexcharts';
 import numeral from 'numeral';
 
 const chainStore = useBlockchain();
@@ -183,7 +184,7 @@ export const colorVariables = (theme: string) => {
   };
 };
 /// Price Chart config
-export const getMarketPriceChartConfig = (theme: string, categories: string[]) => {
+export const getMarketPriceChartConfig = (theme: string, categories: string[]): ApexOptions => {
   const { themeSecondaryTextColor, themeBorderColor, themeDisabledTextColor } = colorVariables(theme);
 
   return {
@@ -233,7 +234,7 @@ export const getMarketPriceChartConfig = (theme: string, categories: string[]) =
     yaxis: {
       labels: {
         style: { colors: themeDisabledTextColor },
-        formatter: function (value: string) {
+        formatter: function (value: number) {
           const pattern = Number(value) > 0.01 ? '0.0[0]a' : '0.00[000]';
           return numeral(value).format(pattern);
         },
@@ -304,7 +305,7 @@ const donutColors = [
   '#124f03',
 ];
 
-export const getDonutChartConfig = (theme: string, labels: string[]) => {
+export const getDonutChartConfig = (theme: string, labels: string[]): ApexOptions => {
   const { themeSecondaryTextColor, themePrimaryTextColor } = colorVariables(theme);
 
   return {

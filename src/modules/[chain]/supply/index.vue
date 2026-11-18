@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref } from '@vue/reactivity';
+import { computed, onMounted, ref } from 'vue';
 import { useBlockchain, useFormatter } from '@/stores';
 import {
   PageRequest,
@@ -7,7 +7,6 @@ import {
   type Coin,
   type DenomMetadata,
 } from '@/types';
-import { onMounted } from 'vue';
 import type { Asset } from '@/types/chaindata';
 import PaginationBar from '@/components/PaginationBar.vue';
 import Loading from '@/components/Loading.vue';
@@ -16,14 +15,16 @@ const props = defineProps(['chain']);
 const format = useFormatter();
 const chainStore = useBlockchain();
 
-const list = ref([] as { denom: string; amount: string; base: string; info: string; logo: string | undefined }[]);
+const supplyCoins = ref([] as Coin[]);
+const denomMetadatas = ref([] as DenomMetadata[]);
 const loading = ref(true);
 
 const pageRequest = ref(new PageRequest());
 const pageResponse = ref({} as Pagination);
 
-interface SupplyAsset extends Asset {
-  logo: string | undefined;
+interface SupplyAsset extends Partial<Asset> {
+  logo?: string;
+  exponent?: string | number;
 }
 
 onMounted(() => {
@@ -33,50 +34,80 @@ onMounted(() => {
 function findGlobalAssetConfig(denom: string) {
   const assets = chainStore.current?.assets;
   if (assets) {
-    const conf = assets.find((a) => a.base === denom);
-    if (conf) {
-      return conf;
-    }
+    return assets.find((a) => a.base === denom);
   }
   return undefined;
 }
 
-async function mergeDenomMetadata(denom: string, denomsMetadatas: DenomMetadata[]): Promise<SupplyAsset> {
-  const denomMetadata = denomsMetadatas.find((d) => d.base.endsWith(denom));
-  let asset = findGlobalAssetConfig(denom) as SupplyAsset;
-  if (asset && denomMetadata) {
-    asset = { ...denomMetadata, ...asset };
-    asset.display = denomMetadata.display;
-    asset.logo = asset.logo_URIs?.svg || asset.logo_URIs?.png || undefined;
-  } else if (denomMetadata) {
-    return denomMetadata as SupplyAsset;
+function mergeDenomMetadata(denom: string, metadatas: DenomMetadata[]): SupplyAsset | undefined {
+  const denomMetadata =
+    metadatas.find((d) => d.base === denom) || metadatas.find((d) => d.base?.endsWith(denom));
+  const globalAsset = findGlobalAssetConfig(denom) as SupplyAsset | undefined;
+
+  if (globalAsset && denomMetadata) {
+    return {
+      ...denomMetadata,
+      ...globalAsset,
+      display: denomMetadata.display || globalAsset.display,
+      logo: globalAsset.logo_URIs?.svg || globalAsset.logo_URIs?.png || globalAsset.logo || undefined,
+    };
   }
-  return asset;
+
+  return globalAsset || (denomMetadata as SupplyAsset | undefined);
 }
 
-function pageload(p: number) {
+function resolveSupplyAmount(coin: Coin, asset?: SupplyAsset): string {
+  const unitExponent = asset?.denom_units?.reduce(
+    (max, u) => (u.exponent > max ? u.exponent : max),
+    0
+  );
+  const configExponent = asset?.exponent !== undefined ? Number(asset.exponent) : 0;
+  const assetExponent = unitExponent || (Number.isFinite(configExponent) ? configExponent : 0);
+
+  const amount =
+    assetExponent > 0
+      ? Number(coin.amount) / 10 ** assetExponent
+      : format.tokenAmountNumber(coin);
+
+  if (!Number.isFinite(amount)) return coin.amount;
+  return amount.toLocaleString('en-US', { maximumFractionDigits: 18 });
+}
+
+const list = computed(() =>
+  supplyCoins.value.map((coin) => {
+    const asset = mergeDenomMetadata(coin.denom, denomMetadatas.value);
+    const symbolOrDenom = asset?.symbol || coin.denom;
+    const tokenName = (symbolOrDenom.split('/').pop() || coin.denom).toUpperCase();
+
+    return {
+      denom: tokenName,
+      amount: resolveSupplyAmount(coin, asset),
+      base: asset?.base || coin.denom,
+      info: asset?.display || coin.denom,
+      logo: asset?.logo_URIs?.svg || asset?.logo_URIs?.png || asset?.logo || '/logo.svg',
+    };
+  })
+);
+
+async function pageload(p: number) {
   pageRequest.value.setPage(p);
   loading.value = true;
-  chainStore.rpc
-    .getBankDenomMetadata()
-    .then(async (denomsMetaResponse) => {
-      const bankSupplyResponse = await chainStore.rpc.getBankSupply(pageRequest.value);
-      list.value = await Promise.all(
-        bankSupplyResponse.supply.map(async (coin: Coin) => {
-          const asset = await mergeDenomMetadata(coin.denom, denomsMetaResponse.metadatas);
-          const denom = asset?.symbol || coin.denom;
-          return {
-            denom: denom.split('/')[denom.split('/').length - 1].toUpperCase(),
-            amount: format.tokenAmountNumber({ amount: coin.amount, denom: denom }).toString(),
-            base: asset.base || coin.denom,
-            info: asset.display || coin.denom,
-            logo: asset?.logo_URIs?.svg || asset?.logo_URIs?.png || '/logo.svg',
-          };
-        })
-      );
-      pageResponse.value = bankSupplyResponse.pagination;
-    })
-    .finally(() => (loading.value = false));
+  try {
+    const [denomsMetaResponse, bankSupplyResponse] = await Promise.all([
+      chainStore.rpc.getBankDenomMetadata().catch(() => ({ metadatas: [] as DenomMetadata[] })),
+      chainStore.rpc.getBankSupply(pageRequest.value),
+    ]);
+    denomMetadatas.value = denomsMetaResponse?.metadatas ?? [];
+    supplyCoins.value = bankSupplyResponse?.supply ?? [];
+    pageResponse.value = bankSupplyResponse?.pagination ?? ({} as Pagination);
+  } catch (err) {
+    console.error('Failed to load bank supply:', err);
+    denomMetadatas.value = [];
+    supplyCoins.value = [];
+    pageResponse.value = {} as Pagination;
+  } finally {
+    loading.value = false;
+  }
 }
 </script>
 <template>
@@ -92,7 +123,7 @@ function pageload(p: number) {
         </tr>
       </thead>
       <tbody v-if="!loading">
-        <tr v-for="item in list" class="hover">
+        <tr v-for="item in list" :key="item.base" class="hover">
           <td>
             <img v-if="item.logo" :src="item.logo" class="w-7 h-7" />
           </td>

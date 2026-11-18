@@ -88,20 +88,36 @@ function resolveSupplyAmount(coin: Coin, asset?: SupplyAsset): string {
   return amount.toLocaleString('en-US', { maximumFractionDigits: 18 });
 }
 
-const list = computed(() =>
-  supplyCoins.value.map((coin) => {
-    const asset = mergeDenomMetadata(coin.denom, denomMetadatas.value);
-    const symbolOrDenom = asset?.symbol || coin.denom;
-    const tokenName = (symbolOrDenom.split('/').pop() || coin.denom).toUpperCase();
+const HIDDEN_SUPPLY_TOKENS = new Set(['UFCTTESTTTTT0', 'UUET']);
 
-    return {
-      denom: tokenName,
-      amount: resolveSupplyAmount(coin, asset),
-      base: asset?.base || coin.denom,
-      info: asset?.display || coin.denom,
-      logo: asset?.logo || asset?.logo_URIs?.svg || asset?.logo_URIs?.png || '/logo.svg',
-    };
-  })
+function isHiddenSupplyToken(values: Array<string | undefined>): boolean {
+  return values.some((value) => {
+    if (!value) return false;
+    const normalized = value.trim().toUpperCase();
+    const lastSegment = normalized.split('/').pop() || normalized;
+    return HIDDEN_SUPPLY_TOKENS.has(normalized) || HIDDEN_SUPPLY_TOKENS.has(lastSegment);
+  });
+}
+
+const list = computed(() =>
+  supplyCoins.value
+    .map((coin) => {
+      const asset = mergeDenomMetadata(coin.denom, denomMetadatas.value);
+      const symbolOrDenom = asset?.symbol || coin.denom;
+      const tokenName = (symbolOrDenom.split('/').pop() || coin.denom).toUpperCase();
+
+      return {
+        denom: tokenName,
+        rawDenom: coin.denom,
+        amount: resolveSupplyAmount(coin, asset),
+        base: asset?.base || coin.denom,
+        info: asset?.display || coin.denom,
+        logo: asset?.logo || asset?.logo_URIs?.svg || asset?.logo_URIs?.png || '/logo.svg',
+      };
+    })
+    .filter(
+      (item) => !isHiddenSupplyToken([item.denom, item.base, item.info, item.rawDenom])
+    )
 );
 
 async function pageload(p: number) {

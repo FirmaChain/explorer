@@ -1,3 +1,4 @@
+// Modified by FirmaChain (2026-11-17) | Licensed under GNU GPL v2.0 (see LICENSE)
 import type { Asset as RegistryAsset, DenomUnit as RegistryDenomUnit } from '@chain-registry/types';
 import type { Chain as RegistryChain, Endpoint as RegistryEndPoint } from '@chain-registry/types/chain.schema';
 

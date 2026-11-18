@@ -1,3 +1,4 @@
+<!-- Modified by FirmaChain (2026-11-17) | Licensed under GNU GPL v2.0 (see LICENSE) -->
 <script lang="ts" setup>
 import { useBlockchain, useParamStore } from '@/stores';
 import { ref, onMounted, watch } from 'vue';

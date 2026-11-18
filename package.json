@@ -26,7 +26,6 @@
     "@vueuse/core": "^15.0.0",
     "@vueuse/integrations": "^15.0.0",
     "@vueuse/math": "^15.0.0",
-    "apexcharts": "^8.9.0",
     "buffer": "^6.0.3",
     "cosmjs-types": "^0.11.0",
     "cross-fetch": "^3.1.5",
@@ -44,8 +43,7 @@
     "vue": "^3.5.45",
     "vue-i18n": "^11.4.22",
     "vue-json-pretty": "^2.6.0",
-    "vue-router": "^4.6.5",
-    "vue3-apexcharts": "^1.11.3"
+    "vue-router": "^4.6.5"
   },
   "devDependencies": {
     "@intlify/unplugin-vue-i18n": "^11.2.8",

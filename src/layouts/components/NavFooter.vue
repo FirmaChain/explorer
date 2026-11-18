@@ -1,3 +1,4 @@
+<!-- Modified by FirmaChain (2026-11-17, 2026-11-18) | Licensed under GNU GPL v2.0 (see LICENSE) -->
 <template>
   <!-- footer -->
   <footer class="flex items-center h-12 mt-5 text-sm bg-base-200 py-2 px-4 z-10 w-full">
@@ -11,11 +12,16 @@
     <div class="hidden md:!block">
       <a
         class="link link-primary no-underline mr-4"
-        href="https://github.com/ping-pub/explorer/blob/master/LICENSE"
-        target="noopener noreferrer"
+        href="https://github.com/FirmaChain/explorer/blob/master/LICENSE"
+        target="_blank"
+        rel="noopener noreferrer"
         >License</a
       >
-      <a class="link link-primary no-underline" href="https://github.com/ping-pub/explorer" target="noopener noreferrer"
+      <a
+        class="link link-primary no-underline"
+        href="https://github.com/FirmaChain/explorer"
+        target="_blank"
+        rel="noopener noreferrer"
         >Github</a
       >
     </div>

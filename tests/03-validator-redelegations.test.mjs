@@ -279,10 +279,7 @@ async function fixture(t, { withRpc = true, detail = false } = {}) {
         ),
         '@/components/ValidatorCommissionRate.vue': await loadProduct(
           'src/components/ValidatorCommissionRate.vue',
-          {
-            ...dependencies,
-            'vue3-apexcharts': { default: () => null, __esModule: true },
-          }
+          dependencies
         ),
         '@iconify/vue': { Icon: () => null },
       })

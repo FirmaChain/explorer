@@ -1,14 +1,14 @@
+<!-- Modified by FirmaChain (2026-11-17, 2026-11-18) | Licensed under GNU GPL v2.0 (see LICENSE) -->
 <script lang="ts" setup>
 import { CosmosRestClient } from '@/libs/client';
 import type { Coin, Delegation } from '@/types';
 import { onScopeDispose, ref, watchEffect } from 'vue';
 import type { AccountEntry } from './utils';
 import { computed } from 'vue';
-import { useBaseStore, useBlockchain, useFormatter, useStorageStore } from '@/stores';
+import { useBlockchain, useFormatter, useStorageStore } from '@/stores';
 import DonutChart from '@/components/charts/DonutChart.vue';
-import ApexCharts from 'vue3-apexcharts';
+import AreaChart from '@/components/charts/AreaChart.vue';
 import { subscribePrice } from '@/libs/priceWorkerClient';
-import { getMarketPriceChartConfig } from '@/components/charts/apexChartConfig';
 
 const format = useFormatter();
 const storageStore = useStorageStore();
@@ -222,16 +222,14 @@ const changeData = computed(() => {
   return [{ name: 'value', data: sum }];
 });
 
-const baseStore = useBaseStore();
-const chartConfig = computed(() => {
-  const theme = baseStore.theme;
-  const labels = [] as any[];
+const chartCategories = computed(() => {
+  const labels = [] as number[];
   const time = new Date().getTime();
   for (let i = 0; i < 168; i++) {
     // only works for 14d
     labels.unshift(time - i * 2 * 60 * 60 * 1000);
   }
-  return getMarketPriceChartConfig(theme, labels);
+  return labels;
 });
 
 const currencySign = computed(() => {
@@ -306,10 +304,9 @@ const currencySign = computed(() => {
           />
         </div>
         <div class="md:col-span-2">
-          <ApexCharts
-            type="area"
-            height="280"
-            :options="chartConfig"
+          <AreaChart
+            :height="280"
+            :categories="chartCategories"
             :series="changeData"
           />
         </div>

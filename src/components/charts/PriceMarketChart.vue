@@ -1,18 +1,20 @@
+<!-- Modified by FirmaChain (2026-11-17, 2026-11-18) | Licensed under GNU GPL v2.0 (see LICENSE) -->
 <script lang="ts" setup>
-import ApexCharts from 'vue3-apexcharts';
-import { getMarketPriceChartConfig } from './apexChartConfig';
+import { computed, ref } from 'vue';
+import AreaChart from './AreaChart.vue';
 import { useIndexModule } from '@/modules/[chain]/indexStore';
-import { computed, ref } from '@vue/reactivity';
-import { useBaseStore } from '@/stores';
 
 const store = useIndexModule();
-const baseStore = useBaseStore();
-const chartConfig = computed(() => {
-  const theme = baseStore.theme;
-  const labels = store.marketData.prices.map((item: any) => item[0]);
-  return getMarketPriceChartConfig(theme, labels);
-});
 const kind = ref('price');
+
+const categories = computed(() => {
+  const source =
+    kind.value === 'price'
+      ? store.marketData.prices
+      : store.marketData.total_volumes;
+  return Array.isArray(source) ? source.map((item: any) => item[0]) : [];
+});
+
 const series = computed(() => {
   return [
     {
@@ -47,5 +49,5 @@ function changeChart(type: string) {
       Volume
     </a>
   </div>
-  <ApexCharts type="area" height="230" :options="chartConfig" :series="series" />
+  <AreaChart :height="230" :categories="categories" :series="series" />
 </template>

@@ -1,3 +1,4 @@
+<!-- Modified by FirmaChain (2026-11-17, 2026-11-18) | Licensed under GNU GPL v2.0 (see LICENSE) -->
 <script lang="ts" setup>
 import { computed } from '@vue/reactivity';
 import { MdPreview } from 'md-editor-v3';

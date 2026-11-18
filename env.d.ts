@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+// Modified by FirmaChain (2026-11-16) | Licensed under GNU GPL v2.0 (see LICENSE)
 
 declare module '@personaxyz/ad-sdk';
 // Vite injects env vars as strings whatever the .env file looks like. Declaring

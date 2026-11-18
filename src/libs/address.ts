@@ -1,3 +1,4 @@
+// Modified by FirmaChain (2026-11-17) | Licensed under GNU GPL v2.0 (see LICENSE)
 import { fromBase64, fromBech32, toBase64, toBech32, toHex } from '@cosmjs/encoding';
 import { Ripemd160, sha256 } from '@cosmjs/crypto';
 

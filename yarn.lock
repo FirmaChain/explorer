@@ -2688,22 +2688,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"apex-commons@npm:^0.11.0":
-  version: 0.11.0
-  resolution: "apex-commons@npm:0.11.0"
-  checksum: 10c0/69e2810fbf79c790c64c4937f27dfde353ef0bd249c5d75f459deb44f4a2b185622134a5c20ee731d4e1f3453b5fc19837011c896ecb02a1a782cbd2017d0e50
-  languageName: node
-  linkType: hard
-
-"apexcharts@npm:^8.9.0":
-  version: 8.9.0
-  resolution: "apexcharts@npm:8.9.0"
-  dependencies:
-    apex-commons: "npm:^0.11.0"
-  checksum: 10c0/9cab875b67e23d4d91e9e34c2b78e84127307874ae03727788e6304aeb6d7c9e09b8fed439760aebf1035ce3f5f4346cb360490a8c72a023dbde66defeb9b912
-  languageName: node
-  linkType: hard
-
 "arg@npm:^5.0.2":
   version: 5.0.2
   resolution: "arg@npm:5.0.2"
@@ -4772,7 +4756,6 @@ __metadata:
     "@vueuse/core": "npm:^15.0.0"
     "@vueuse/integrations": "npm:^15.0.0"
     "@vueuse/math": "npm:^15.0.0"
-    apexcharts: "npm:^8.9.0"
     autoprefixer: "npm:^10.6.2"
     buffer: "npm:^6.0.3"
     cosmjs-types: "npm:^0.11.0"
@@ -4806,7 +4789,6 @@ __metadata:
     vue-json-pretty: "npm:^2.6.0"
     vue-router: "npm:^4.6.5"
     vue-tsc: "npm:^3.3.14"
-    vue3-apexcharts: "npm:^1.11.3"
   languageName: unknown
   linkType: soft
 
@@ -6101,19 +6083,6 @@ __metadata:
   bin:
     vue-tsc: ./bin/vue-tsc.js
   checksum: 10c0/1ae61d57a3af3e0b63a3ed72e351cac9e09b718d26bcb21b926e12dda6b95bfb2dbf4c9d534cc2b3236defc5512c67689b98f76426ccdfb7cf2942d4f6fffd9c
-  languageName: node
-  linkType: hard
-
-"vue3-apexcharts@npm:^1.11.3":
-  version: 1.11.3
-  resolution: "vue3-apexcharts@npm:1.11.3"
-  peerDependencies:
-    apexcharts: ">=5.10.0"
-    vue: ">=3.0.0"
-  peerDependenciesMeta:
-    apexcharts:
-      optional: false
-  checksum: 10c0/1c1f5ad354152bf0de156fb4dabf9dee552959952aea40854e47f9f8240685aee89c9f0facc6aa79df88c2d0d723145b30b77f3b855572ca97c503d0345118d3
   languageName: node
   linkType: hard
 

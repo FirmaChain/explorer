@@ -1,3 +1,4 @@
+// Modified by FirmaChain (2026-11-18) | Licensed under GNU GPL v2.0 (see LICENSE)
 import { fileURLToPath, URL } from 'node:url';
 
 import { defineConfig } from 'vite';
